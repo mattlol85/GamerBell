@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Button Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 50px;
+        }
+        button {
+            font-size: 20px;
+            padding: 15px 30px;
+            cursor: pointer;
+            border: none;
+            border-radius: 10px;
+            background-color: #4CAF50;
+            color: white;
+            transition: background 0.2s;
+        }
+        button.pressed {
+            background-color: #f44336;
+        }
+        .led {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: inline-block;
+            background-color: gray;
+            margin-top: 20px;
+            transition: background 0.2s;
+        }
+        .led.on {
+            background-color: green;
+        }
+        .led.off {
+            background-color: gray;
+        }
+        .screen {
+            width: 300px;
+            height: 50px;
+            font-size: 20px;
+            text-align: center;
+            border: 2px solid black;
+            margin: 20px auto;
+            padding: 10px;
+            background-color: #f1f1f1;
+        }
+    </style>
+</head>
+<body>
+
+<h2>WebSocket Button Test</h2>
+<p>Click and hold the button to simulate a press event.</p>
+
+<button id="button1">Press Me</button>
+
+<p id="status">Status: Waiting for WebSocket...</p>
+
+<!-- Simulated LED -->
+<div id="led" class="led off"></div>
+
+<!-- Simulated screen -->
+<div id="screen" class="screen"></div>
+
+<script>
+    const socket = new WebSocket("ws://localhost:8080/ws");
+    const deviceId = "web-client"; // Unique ID for this client
+
+    socket.onopen = () => {
+        document.getElementById("status").innerText = "Status: Connected to WebSocket!";
+        console.log("Connected to WebSocket server");
+    };
+
+    socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        console.log("Received event:", data);
+
+        const button = document.getElementById("button1");
+        const led = document.getElementById("led");
+        const screen = document.getElementById("screen");
+
+        if (data.deviceId && data.buttonEvent) {
+            if (data.buttonEvent === "PRESSED") {
+                button.classList.add("pressed");
+                led.classList.remove("off");
+                led.classList.add("on");
+                screen.innerText = `Device ${data.deviceId} Pressed!`;
+            } else if (data.buttonEvent === "RELEASED") {
+                button.classList.remove("pressed");
+                led.classList.remove("on");
+                led.classList.add("off");
+                screen.innerText = ""; // Clear the screen
+            }
+        }
+    };
+
+    socket.onclose = () => {
+        document.getElementById("status").innerText = "Status: WebSocket Disconnected!";
+        console.log("WebSocket disconnected");
+    };
+
+    function sendButtonEvent(buttonEvent) {
+        if (socket.readyState === WebSocket.OPEN) {
+            const message = JSON.stringify({ deviceId, buttonEvent });
+            socket.send(message);
+        }
+    }
+
+    const button = document.getElementById("button1");
+
+    // Send "press" event when mouse button is held down
+    button.addEventListener("mousedown", () => sendButtonEvent("PRESSED"));
+    button.addEventListener("touchstart", () => sendButtonEvent("PRESSED")); // For mobile
+
+    // Send "release" event when mouse button is released
+    button.addEventListener("mouseup", () => sendButtonEvent("RELEASED"));
+    button.addEventListener("mouseleave", () => sendButtonEvent("RELEASED")); // Prevent stuck state
+    button.addEventListener("touchend", () => sendButtonEvent("RELEASED")); // For mobile
+</script>
+
+</body>
+</html>

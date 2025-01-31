@@ -1,38 +1,60 @@
 package org.fitznet.fun.handler;
 
+import lombok.NonNull;
+import lombok.extern.slf4j.Slf4j;
+import org.fitznet.fun.dto.ButtonEventDto;
 import org.fitznet.fun.service.ButtonService;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.fitznet.fun.utils.JsonUtils;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
+import static org.fitznet.fun.dto.ButtonEvent.PRESSED;
+import static org.fitznet.fun.dto.ButtonEvent.RELEASED;
+import static org.fitznet.fun.utils.JsonUtils.OBJECT_MAPPER;
+
 @Component
+@Slf4j
 public class SimpleWebSocketHandler extends TextWebSocketHandler {
 
-    @Autowired
-    private ButtonService buttonService;
+    private final ButtonService buttonService;
+
+    public SimpleWebSocketHandler(ButtonService buttonService) {
+        this.buttonService = buttonService;
+    }
 
     @Override
-    public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-        System.out.println("Client connected: " + session.getId());
+    public void afterConnectionEstablished(@NonNull WebSocketSession session) {
         buttonService.addSession(session);
-        session.sendMessage(new TextMessage("You are now connected to the server"));
+        buttonService.broadcastMessage("Client connected: " + session.getId());
+        log.info("Client connected: {}", session.getId());
     }
 
     @Override
-    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+    public void afterConnectionClosed(@NonNull WebSocketSession session, @NonNull CloseStatus status) {
         buttonService.removeSession(session);
-        System.out.println("Client disconnected: " + session.getId());
+        log.info("Client disconnected: {}", session.getId());
     }
 
     @Override
-    public void handleTextMessage(WebSocketSession session, TextMessage message) {
-        String payload = message.getPayload();
-        System.out.println("Received message: " + payload);
+    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+        log.info("Received message from client {}: {}", session.getId(), message.getPayload());
 
-        buttonService.logEvent(session.getId(), payload);
-        buttonService.broadcastMessage(payload);
+        try {
+            ButtonEventDto event = OBJECT_MAPPER.readValue(message.getPayload(), ButtonEventDto.class);
+            log.info("Parsed message: {}", event);
+
+            if (PRESSED.equals(event.getButtonEvent()) || RELEASED.equals(event.getButtonEvent())) {
+                // Convert DTO back to JSON and broadcast it
+                log.info("Broadcasting message to connected clients: {}", event);
+                String responseJson = OBJECT_MAPPER.writeValueAsString(event);
+                buttonService.broadcastMessage(responseJson);
+            }
+
+        } catch (Exception e) {
+            log.error("Error handling message: {}", e.getMessage());
+        }
     }
 }

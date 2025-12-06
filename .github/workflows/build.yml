@@ -64,10 +64,7 @@ jobs:
       - name: 🎯 Determine release eligibility
         id: release_check
         run: |
-          last_commit_msg=$(git log -1 --pretty=%B | tr '[:upper:]' '[:lower:]')
-          ref_name=${GITHUB_REF##*/}
-
-          if [[ "${{ github.actor }}" == "github-actions[bot]" ]] || [[ "${{ github.event_name }}" != "push" ]]; then
+          if [[ "${{ github.actor }}" == "github-actions[bot]" ]]; then
             echo "should-release=false" >> $GITHUB_OUTPUT
             exit 0
           fi

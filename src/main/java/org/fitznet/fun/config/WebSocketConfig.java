@@ -1,6 +1,6 @@
 package org.fitznet.fun.config;
 
-import org.fitznet.fun.handler.SimpleWebSocketHandler;
+import org.fitznet.fun.handler.ButtonWebSocketHandler;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
@@ -10,9 +10,9 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 @EnableWebSocket
 public class WebSocketConfig implements WebSocketConfigurer {
 
-    private final SimpleWebSocketHandler simpleWebSocketHandler;
+    private final ButtonWebSocketHandler simpleWebSocketHandler;
 
-    public WebSocketConfig(SimpleWebSocketHandler simpleWebSocketHandler) {
+    public WebSocketConfig(ButtonWebSocketHandler simpleWebSocketHandler) {
         this.simpleWebSocketHandler = simpleWebSocketHandler;
     }
 

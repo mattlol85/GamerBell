@@ -9,11 +9,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class GamerBellApplication {
 
     public static void main(String[] args) {
-        try {
-            SpringApplication.run(GamerBellApplication.class, args);
-        } catch (Exception e) {
-            log.error("Error starting application: {}", e.getMessage());
-        }
+        SpringApplication.run(GamerBellApplication.class, args);
     }
 
 }

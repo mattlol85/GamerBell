@@ -64,7 +64,10 @@ jobs:
       - name: 🎯 Determine release eligibility
         id: release_check
         run: |
-          if [[ "${{ github.actor }}" == "github-actions[bot]" ]]; then
+          last_commit_msg=$(git log -1 --pretty=%B | tr '[:upper:]' '[:lower:]')
+          ref_name=${GITHUB_REF##*/}
+
+          if [[ "${{ github.actor }}" == "github-actions[bot]" ]] || [[ "${{ github.event_name }}" != "push" ]]; then
             echo "should-release=false" >> $GITHUB_OUTPUT
             exit 0
           fi
@@ -77,13 +80,9 @@ jobs:
               ;;
           esac
 
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} || echo "")
-            NON_WORKFLOW_CHANGES=$(echo "$CHANGED_FILES" | grep -v '^\.github/workflows/' | grep -v '^$' || true)
-            if [[ -z "$NON_WORKFLOW_CHANGES" && -n "$CHANGED_FILES" ]]; then
-              echo "should-release=false" >> $GITHUB_OUTPUT
-              exit 0
-            fi
+          if [[ "$last_commit_msg" =~ \[skip[ -]?release\] ]]; then
+            echo "should-release=false" >> $GITHUB_OUTPUT
+            exit 0
           fi
 
           echo "should-release=true" >> $GITHUB_OUTPUT

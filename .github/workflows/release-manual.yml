@@ -1,0 +1,129 @@
+name: Release (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: Branch to release from
+        required: true
+        default: main
+      release_level:
+        description: major | minor | patch
+        required: true
+        default: minor
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.target_branch }}
+          fetch-depth: 0
+
+      - name: Set up Temurin JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Validate Gradle wrapper
+        uses: gradle/wrapper-validation-action@v2
+
+      - name: Configure Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Determine versions
+        id: version
+        run: |
+          set -euo pipefail
+          current_version=$(./gradlew properties -q | awk -F ': ' '/^version:/ {print $2}')
+          current_version=${current_version%-SNAPSHOT}
+          level="${{ github.event.inputs.release_level }}"
+          if [[ "$level" != "major" && "$level" != "minor" && "$level" != "patch" ]]; then
+            echo "Unsupported release level: $level" >&2
+            exit 1
+          fi
+          IFS='.' read -r major minor patch <<< "$current_version"
+          case "$level" in
+            major)
+              ((major++))
+              minor=0
+              patch=0
+              ;;
+            minor)
+              ((minor++))
+              patch=0
+              ;;
+            patch)
+              ((patch++))
+              ;;
+          esac
+          release_version="$major.$minor.$patch"
+          ((patch++))
+          next_snapshot="$major.$minor.$patch-SNAPSHOT"
+          echo "release_version=$release_version" >> $GITHUB_OUTPUT
+          echo "next_snapshot=$next_snapshot" >> $GITHUB_OUTPUT
+          echo "tag_name=v$release_version" >> $GITHUB_OUTPUT
+
+      - name: Build with release version
+        run: ./gradlew -Pversion=${{ steps.version.outputs.release_version }} clean test bootJar
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gamerbell-jars-manual
+          path: build/libs/*.jar
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Set up git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Apply release version
+        run: |
+          sed -i.bak "s/^version = .*/version = '${{ steps.version.outputs.release_version }}'/" build.gradle
+          rm build.gradle.bak
+
+      - name: Commit release version
+        run: |
+          git add build.gradle
+          git commit -m "chore: release ${{ steps.version.outputs.release_version }} [skip ci]"
+
+      - name: Create tag
+        run: git tag ${{ steps.version.outputs.tag_name }}
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: gamerbell-jars-manual
+          path: dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag_name }}
+          name: Release ${{ steps.version.outputs.release_version }}
+          files: dist/*.jar
+          generate_release_notes: true
+
+      - name: Bump to next snapshot
+        run: |
+          sed -i.bak "s/^version = .*/version = '${{ steps.version.outputs.next_snapshot }}'/" build.gradle
+          rm build.gradle.bak
+          git add build.gradle
+          git commit -m "chore: bump to ${{ steps.version.outputs.next_snapshot }} [skip ci]"
+
+      - name: Push changes and tags
+        uses: ad-m/github-push-action@v0.8.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.event.inputs.target_branch }}
+          tags: true

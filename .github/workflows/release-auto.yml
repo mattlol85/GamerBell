@@ -17,7 +17,6 @@ jobs:
     if: github.actor != 'github-actions[bot]'
     outputs:
       release_version: ${{ steps.version.outputs.release_version }}
-      next_snapshot: ${{ steps.version.outputs.next_snapshot }}
       tag_name: ${{ steps.version.outputs.tag_name }}
     steps:
       - name: Checkout
@@ -38,9 +37,12 @@ jobs:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
-          current_version=$(awk -F '"' '/^version =/ {print $2}' build.gradle)
-          current_version=${current_version#${rootProjectName}-}
-          root_name=${rootProjectName:-GamerBell}
+          raw_version=$(awk -F '"' '/^version =/ {print $2}' build.gradle)
+          if [[ "$raw_version" == *"-"* ]]; then
+            current_version=${raw_version##*-}
+          else
+            current_version=$raw_version
+          fi
           commit_message=${COMMIT_MESSAGE:-}
           if [[ -z "$commit_message" ]]; then
             commit_message=$(git log -1 --pretty=%B)

@@ -111,12 +111,18 @@ jobs:
         run: |
           set -euo pipefail
           echo "::group::Calculating version"
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.1")
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "Latest tag: $LATEST_TAG"
           VERSION=${LATEST_TAG#v}
           IFS='.' read -ra PARTS <<< "$VERSION"
           MAJOR=${PARTS[0]:-0}
           MINOR=${PARTS[1]:-0}
           PATCH=${PARTS[2]:-0}
+          
+          # Ensure numeric values
+          MAJOR=$((MAJOR + 0))
+          MINOR=$((MINOR + 0))
+          PATCH=$((PATCH + 0))
 
           COMMIT_MSG=$(git log -1 --pretty=%B || echo "")
 
@@ -135,11 +141,11 @@ jobs:
 
           case "$INCREMENT" in
             major)
-              ((MAJOR++)); MINOR=0; PATCH=0 ;;
+              MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
             minor)
-              ((MINOR++)); PATCH=0 ;;
+              MINOR=$((MINOR + 1)); PATCH=0 ;;
             patch)
-              ((PATCH++)) ;;
+              PATCH=$((PATCH + 1)) ;;
           esac
 
           NEW_VERSION_NO_V="$MAJOR.$MINOR.$PATCH"

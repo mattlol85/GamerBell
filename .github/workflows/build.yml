@@ -109,6 +109,7 @@ jobs:
       - name: 🔍 Determine next version
         id: version_calc
         run: |
+          set -euo pipefail
           echo "::group::Calculating version"
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.1")
           VERSION=${LATEST_TAG#v}
@@ -118,23 +119,36 @@ jobs:
           PATCH=${PARTS[2]:-0}
 
           COMMIT_MSG=$(git log -1 --pretty=%B || echo "")
-          if [[ "$COMMIT_MSG" =~ ^.*! ]]; then
-            ((MAJOR++)); MINOR=0; PATCH=0; INCREMENT="major"; EMOJI="🚀"
-          elif [[ "$COMMIT_MSG" =~ \(feat\) ]]; then
-            ((MINOR++)); PATCH=0; INCREMENT="minor"; EMOJI="✨"
-          elif [[ "$COMMIT_MSG" =~ \(fix\) || "$COMMIT_MSG" =~ \(chore\) ]]; then
-            ((PATCH++)); INCREMENT="patch"; EMOJI="🐛"
-          else
-            ((MINOR++)); PATCH=0; INCREMENT="minor"; EMOJI="✨"
+
+          INCREMENT="minor"
+          EMOJI="✨"
+          if [[ "$COMMIT_MSG" == *"!"* ]]; then
+            INCREMENT="major"
+            EMOJI="🚀"
+          elif [[ "$COMMIT_MSG" == *"(feat)"* ]]; then
+            INCREMENT="minor"
+            EMOJI="✨"
+          elif [[ "$COMMIT_MSG" == *"(fix)"* || "$COMMIT_MSG" == *"(chore)"* ]]; then
+            INCREMENT="patch"
+            EMOJI="🐛"
           fi
+
+          case "$INCREMENT" in
+            major)
+              ((MAJOR++)); MINOR=0; PATCH=0 ;;
+            minor)
+              ((MINOR++)); PATCH=0 ;;
+            patch)
+              ((PATCH++)) ;;
+          esac
 
           NEW_VERSION_NO_V="$MAJOR.$MINOR.$PATCH"
           NEW_VERSION="v$NEW_VERSION_NO_V"
 
-          echo "new-version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "new-version-no-v=$NEW_VERSION_NO_V" >> $GITHUB_OUTPUT
-          echo "increment-type=$INCREMENT" >> $GITHUB_OUTPUT
-          echo "emoji=$EMOJI" >> $GITHUB_OUTPUT
+          echo "new-version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "new-version-no-v=$NEW_VERSION_NO_V" >> "$GITHUB_OUTPUT"
+          echo "increment-type=$INCREMENT" >> "$GITHUB_OUTPUT"
+          echo "emoji=$EMOJI" >> "$GITHUB_OUTPUT"
           echo "$EMOJI $LATEST_TAG -> $NEW_VERSION ($INCREMENT)"
           echo "::endgroup::"
 

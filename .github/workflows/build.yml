@@ -64,28 +64,30 @@ jobs:
       - name: 🎯 Determine release eligibility
         id: release_check
         run: |
+          set -euo pipefail
           last_commit_msg=$(git log -1 --pretty=%B | tr '[:upper:]' '[:lower:]')
           ref_name=${GITHUB_REF##*/}
 
-          if [[ "${{ github.actor }}" == "github-actions[bot]" ]] || [[ "${{ github.event_name }}" != "push" ]]; then
-            echo "should-release=false" >> $GITHUB_OUTPUT
+          if [[ "${{ github.actor }}" == "github-actions[bot]" || "${{ github.event_name }}" != "push" ]]; then
+            echo "should-release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           case "$ref_name" in
-            main|master) ;;
+            main|master)
+              ;;
             *)
-              echo "should-release=false" >> $GITHUB_OUTPUT
+              echo "should-release=false" >> "$GITHUB_OUTPUT"
               exit 0
               ;;
           esac
 
-          if [[ "$last_commit_msg" =~ \[skip[ -]?release\] ]]; then
-            echo "should-release=false" >> $GITHUB_OUTPUT
+          if [[ "$last_commit_msg" =~ \[skip[[:space:]-]?release\] ]]; then
+            echo "should-release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          echo "should-release=true" >> $GITHUB_OUTPUT
+          echo "should-release=true" >> "$GITHUB_OUTPUT"
           echo "Release eligibility determined: ${{ steps.release_check.outputs.should-release }}"
 
   version:

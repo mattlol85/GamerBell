@@ -22,6 +22,11 @@ public class ButtonService {
         sessions.remove(session);
     }
 
+
+    public long getSessionCount() {
+        return sessions.size();
+    }
+
     public void broadcastMessage(String message) {
         for (WebSocketSession session : sessions) {
             try {

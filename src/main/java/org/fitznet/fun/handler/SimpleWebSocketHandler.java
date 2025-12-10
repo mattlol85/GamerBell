@@ -4,7 +4,6 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.fitznet.fun.dto.ButtonEventDto;
 import org.fitznet.fun.service.ButtonService;
-import org.fitznet.fun.utils.JsonUtils;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -28,7 +27,6 @@ public class SimpleWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionEstablished(@NonNull WebSocketSession session) {
         buttonService.addSession(session);
-        buttonService.broadcastMessage("Client connected: " + session.getId());
         log.info("Client connected: {}", session.getId());
     }
 
@@ -39,15 +37,13 @@ public class SimpleWebSocketHandler extends TextWebSocketHandler {
     }
 
     @Override
-    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+    protected void handleTextMessage(WebSocketSession session, TextMessage message) {
         log.info("Received message from client {}: {}", session.getId(), message.getPayload());
-
         try {
             ButtonEventDto event = OBJECT_MAPPER.readValue(message.getPayload(), ButtonEventDto.class);
             log.info("Parsed message: {}", event);
 
             if (PRESSED.equals(event.getButtonEvent()) || RELEASED.equals(event.getButtonEvent())) {
-                // Convert DTO back to JSON and broadcast it
                 log.info("Broadcasting message to connected clients: {}", event);
                 String responseJson = OBJECT_MAPPER.writeValueAsString(event);
                 buttonService.broadcastMessage(responseJson);

@@ -62,8 +62,14 @@ public class GamerBellController {
                  currentVersion != null ? currentVersion : "unknown",
                  latestVersion);
 
+        // Check if cached firmware file matches the latest version
+        if (!firmwareService.isFirmwareUpToDate(latestVersion)) {
+            log.info("Cached firmware is outdated or missing. Deleting old firmware and downloading version: {}", latestVersion);
+            firmwareService.deleteOldFirmware();
+        }
+
         // Check if firmware file exists
-        if (!firmwareService.hasFirmwareFile()) {
+        if (firmwareService.isFirmwareMissing()) {
             log.warn("Firmware file not found locally, attempting to download from GitHub");
             boolean downloaded = firmwareService.downloadLatestFirmware(latestVersion);
             if (!downloaded) {

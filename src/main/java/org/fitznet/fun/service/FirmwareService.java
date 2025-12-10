@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 
+import static org.springframework.web.reactive.function.client.WebClientResponseException.*;
 import static reactor.netty.http.client.HttpClient.*;
 
 @Slf4j
@@ -37,8 +38,9 @@ public class FirmwareService {
     private String firmwareFilename;
 
     private String cachedLatestVersion;
+    private String cachedFirmwareVersion; // The version of the firmware.bin file we have
     private long lastVersionCheckTime = 0;
-    private static final long VERSION_CACHE_DURATION_MS = 1000; // Todo Debug Value
+    private static final long VERSION_CACHE_DURATION_MS = 60000;
 
     public FirmwareService(WebClient.Builder webClientBuilder) {
         // WebClient for GitHub API calls
@@ -46,10 +48,8 @@ public class FirmwareService {
                 .baseUrl("https://api.github.com")
                 .build();
 
-        // WebClient for downloading firmware binaries (no baseUrl, accepts full URLs)
-        // Configure with larger buffer size for binary downloads and redirect following
-        HttpClient httpClient = create()
-                .followRedirect(true); // Enable redirect following for GitHub downloads
+
+        HttpClient httpClient = create().followRedirect(true);
 
         this.downloadWebClient = WebClient.builder()
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
@@ -94,7 +94,7 @@ public class FirmwareService {
                          cachedLatestVersion, response.getPublishedAt());
                 return cachedLatestVersion;
             }
-        } catch (org.springframework.web.reactive.function.client.WebClientResponseException.NotFound e) {
+        } catch (NotFound e) {
             log.warn("No releases found in GitHub repo: {}", githubRepo);
             log.warn("Create your first release at: https://github.com/{}/releases/new", githubRepo);
             log.warn("Using default version: v1.0.0");
@@ -178,14 +178,9 @@ public class FirmwareService {
             log.error("No .bin file found in GitHub release {}", version);
             return false;
 
-        } catch (org.springframework.web.reactive.function.client.WebClientResponseException.NotFound e) {
+        } catch (NotFound e) {
             log.error("GitHub release '{}' not found. Please create a release at: https://github.com/{}/releases/new",
                      version, githubRepo);
-            log.error("Release creation steps:");
-            log.error("  1. Tag version: {}", version);
-            log.error("  2. Upload your compiled .bin file");
-            log.error("  3. Do NOT mark as pre-release");
-            log.error("  4. Publish the release");
             return false;
         } catch (Exception e) {
             log.error("Failed to download firmware from GitHub: {} - {}", e.getClass().getSimpleName(), e.getMessage());
@@ -225,6 +220,8 @@ public class FirmwareService {
 
                 log.info("Firmware downloaded successfully: {} bytes written to {}",
                          firmwareData.length, firmwarePath.toAbsolutePath());
+                cachedFirmwareVersion = version;
+                log.info("Cached firmware version updated to: {}", cachedFirmwareVersion);
                 return true;
             } else {
                 log.error("Downloaded firmware data is null or empty");
@@ -241,13 +238,51 @@ public class FirmwareService {
     }
 
     /**
-     * Check if a firmware file exists locally
+     * Check if a firmware file is missing locally
      */
-    public boolean hasFirmwareFile() {
+    public boolean isFirmwareMissing() {
         Path firmwarePath = Paths.get(firmwareStoragePath, firmwareFilename);
         boolean exists = firmwarePath.toFile().exists();
         log.debug("Firmware file exists: {}", exists);
-        return exists;
+        return !exists;
+    }
+
+    /**
+     * Check if the cached firmware file matches the latest version
+     * @param latestVersion The latest version from GitHub
+     * @return true if cached firmware matches latest version
+     */
+    public boolean isFirmwareUpToDate(String latestVersion) {
+        if (isFirmwareMissing()) {
+            log.debug("No firmware file exists, not up to date");
+            return false;
+        }
+
+        if (cachedFirmwareVersion == null) {
+            log.debug("No cached firmware version tracked, assuming out of date");
+            return false;
+        }
+
+        boolean upToDate = cachedFirmwareVersion.equals(latestVersion);
+        log.debug("Firmware up to date check: cached={}, latest={}, result={}",
+                 cachedFirmwareVersion, latestVersion, upToDate);
+        return upToDate;
+    }
+
+    /**
+     * Delete the old firmware file when a new version is available
+     */
+    public void deleteOldFirmware() {
+        try {
+            Path firmwarePath = Paths.get(firmwareStoragePath, firmwareFilename);
+            if (Files.exists(firmwarePath)) {
+                Files.delete(firmwarePath);
+                log.info("Deleted old firmware file: {}", firmwarePath.toAbsolutePath());
+                cachedFirmwareVersion = null;
+            }
+        } catch (IOException e) {
+            log.error("Failed to delete old firmware file: {}", e.getMessage(), e);
+        }
     }
 }
 

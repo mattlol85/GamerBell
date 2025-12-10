@@ -16,11 +16,11 @@ import static org.fitznet.fun.utils.JsonUtils.OBJECT_MAPPER;
 
 @Component
 @Slf4j
-public class SimpleWebSocketHandler extends TextWebSocketHandler {
+public class ButtonWebSocketHandler extends TextWebSocketHandler {
 
     private final ButtonService buttonService;
 
-    public SimpleWebSocketHandler(ButtonService buttonService) {
+    public ButtonWebSocketHandler(ButtonService buttonService) {
         this.buttonService = buttonService;
     }
 

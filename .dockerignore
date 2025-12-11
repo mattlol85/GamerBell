@@ -1,0 +1,57 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# Build artifacts
+build/
+target/
+out/
+*.jar
+*.war
+*.ear
+
+# Gradle files
+.gradle
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE files
+.idea
+*.iml
+*.ipr
+*.iws
+.vscode
+.settings
+.classpath
+.project
+.factorypath
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test files
+**/test/
+**/*Test.java
+**/*Tests.java
+
+# Firmware downloads (will be downloaded at runtime)
+firmware/
+
+# Docker files
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Documentation
+README.md
+HELP.md
+*.md
+
+# CI/CD
+.github/
+

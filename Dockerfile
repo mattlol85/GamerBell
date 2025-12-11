@@ -23,9 +23,14 @@ RUN mkdir -p build/dependency && \
 # Stage 2: Runtime image
 FROM eclipse-temurin:21-jre-jammy
 
+# Accept version as build argument
+ARG VERSION=unknown
+
 LABEL maintainer="mattlol85"
 LABEL description="GamerBell - ESP32 Bell Button WebSocket Server"
-LABEL version="0.4.0"
+LABEL version="${VERSION}"
+LABEL org.opencontainers.image.version="${VERSION}"
+LABEL org.opencontainers.image.source="https://github.com/mattlol85/GamerBell"
 
 # Create non-root user for security
 RUN groupadd -r spring && useradd -r -g spring spring

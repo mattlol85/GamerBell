@@ -5,25 +5,19 @@ FROM gradle:8.11-jdk21 AS builder
 
 WORKDIR /app
 
-# Copy Gradle wrapper and build files
+# Copy all files needed for build
 COPY gradlew .
 COPY gradle gradle
 COPY build.gradle .
 COPY settings.gradle .
-
-# Download dependencies (cached layer)
-RUN ./gradlew dependencies --no-daemon || true
-
-# Copy source code
 COPY src src
 
-# Build the application
-RUN ./gradlew bootJar --no-daemon
-
-# Extract layers for optimized Docker image
-RUN mkdir -p build/dependency && \
-    cd build/dependency && \
-    java -Djarmode=layertools -jar ../libs/*.jar extract
+# Build the application with optimized settings for multi-platform builds
+# Skip tests in Docker build, tests run in CI before this
+RUN ./gradlew bootJar -x test --no-daemon --parallel --build-cache \
+    && mkdir -p build/dependency \
+    && cd build/dependency \
+    && java -Djarmode=tools extract --layers --launcher ../libs/*.jar
 
 # Stage 2: Runtime image
 FROM eclipse-temurin:21-jre-jammy

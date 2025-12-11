@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  gamerbell:
+    image: mattlol85/bell-api:latest
+    container_name: gamerbell-app
+    restart: unless-stopped
+
+    ports:
+      - "8080:8080"
+
+    environment:
+      # Spring Boot Configuration
+      SPRING_APPLICATION_NAME: GamerBell
+
+      # Firmware Configuration
+      FIRMWARE_STORAGE_PATH: /app/firmware
+      FIRMWARE_GITHUB_REPO: mattlol85/Esp32FitznetBell
+      FIRMWARE_FILENAME: firmware.bin
+
+      # Server Configuration
+      SERVER_PORT: 8080
+
+      # JVM Options
+      JAVA_OPTS: -Xmx512m -Xms256m
+
+    volumes:
+      # Persist firmware downloads
+      - gamerbell-firmware:/app/firmware
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    networks:
+      - gamerbell-network
+
+volumes:
+  gamerbell-firmware:
+    name: gamerbell-firmware
+
+networks:
+  gamerbell-network:
+    name: gamerbell-network
+    driver: bridge
+

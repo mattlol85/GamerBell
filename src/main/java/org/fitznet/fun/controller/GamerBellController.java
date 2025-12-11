@@ -14,16 +14,18 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
+import static org.fitznet.fun.utils.Constants.ESP32_ERROR_HEADER;
+import static org.fitznet.fun.utils.Constants.ESP32_MAC_ADDRESS_HEADER;
+import static org.fitznet.fun.utils.Constants.ESP32_VERSION_HEADER;
+import static org.fitznet.fun.utils.Constants.LATEST_VERSION_HEADER;
+
 @Slf4j
 @RestController
 public class GamerBellController {
 
+    final ButtonService buttonService;
 
-    final
-    ButtonService buttonService;
-
-    final
-    FirmwareService firmwareService;
+    final FirmwareService firmwareService;
 
     public GamerBellController(ButtonService buttonService, FirmwareService firmwareService) {
         this.buttonService = buttonService;
@@ -42,8 +44,8 @@ public class GamerBellController {
 
     @GetMapping("/api/firmware/latest")
     public ResponseEntity<Resource> checkForUpdate(
-            @RequestHeader(value = "x-ESP32-version", required = false) String currentVersion,
-            @RequestHeader(value = "x-ESP32-MAC", required = false) String deviceMac) {
+            @RequestHeader(value = ESP32_VERSION_HEADER, required = false) String currentVersion,
+            @RequestHeader(value = ESP32_MAC_ADDRESS_HEADER, required = false) String deviceMac) {
 
         log.info("Firmware update check - Device MAC: {}, Current Version: {}",
                  deviceMac != null ? deviceMac : "unknown",
@@ -91,7 +93,7 @@ public class GamerBellController {
                      deviceMac != null ? deviceMac : "unknown");
 
             return ResponseEntity.ok()
-                    .header("x-Latest-Version", latestVersion)
+                    .header(LATEST_VERSION_HEADER, latestVersion)
                     .contentType(MediaType.APPLICATION_OCTET_STREAM)
                     .contentLength(firmware.contentLength())
                     .body(firmware);
@@ -99,7 +101,7 @@ public class GamerBellController {
         } catch (Exception e) {
             log.error("Error serving firmware: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .header("X-Firmware-Error", "Internal error serving firmware")
+                    .header(ESP32_ERROR_HEADER, "Internal error serving firmware")
                     .build();
         }
     }

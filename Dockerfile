@@ -12,12 +12,13 @@ COPY build.gradle .
 COPY settings.gradle .
 COPY src src
 
-# Build the application with optimized settings for multi-platform builds
-# Skip tests in Docker build, tests run in CI before this
-RUN ./gradlew bootJar -x test --no-daemon --parallel --build-cache \
-    && mkdir -p build/dependency \
-    && cd build/dependency \
-    && java -Djarmode=tools extract --layers --launcher ../libs/*.jar
+RUN ./gradlew bootJar -x test --no-daemon --parallel --build-cache
+
+# Extract layers for optimized Docker image
+RUN mkdir -p build/dependency && \
+    cd build/dependency && \
+    JAR_FILE=$(ls ../libs/*.jar | grep -v plain | head -1) && \
+    java -Djarmode=layertools -jar $JAR_FILE extract
 
 # Stage 2: Runtime image
 FROM eclipse-temurin:21-jre-jammy

@@ -1,0 +1,102 @@
+name: 🚀 Deploy Bell-API to Proxmox (Docker)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to deploy (e.g., v0.6.0 or latest)"
+        required: true
+        default: "latest"
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: 🚀 Deploy to Proxmox VM
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🔍 Resolve deployment tag
+        id: vars
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            TAG="${{ github.event.release.tag_name }}"
+            echo "Deploying from release: $TAG"
+          else
+            TAG="${{ github.event.inputs.tag }}"
+            echo "Deploying manually specified tag: $TAG"
+          fi
+
+          TAG_NO_V="${TAG#v}"
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "tag-no-v=$TAG_NO_V" >> "$GITHUB_OUTPUT"
+
+      - name: 🔑 Setup SSH key + host alias
+        run: |
+          echo "::group::Setting up SSH"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          echo "${{ secrets.PROXMOX_SSH_PRIVATE_KEY }}" > ~/.ssh/proxmox_key
+          chmod 600 ~/.ssh/proxmox_key
+
+          if ! ssh-keygen -y -f ~/.ssh/proxmox_key >/dev/null 2>&1; then
+            echo "❌ Invalid SSH private key format"
+            exit 1
+          fi
+
+          cat > ~/.ssh/config << EOF
+          Host proxmoxvm
+              HostName ${{ secrets.PROXMOX_HOST }}
+              User ${{ secrets.PROXMOX_USER }}
+              IdentityFile ~/.ssh/proxmox_key
+              Port 22
+              StrictHostKeyChecking no
+              UserKnownHostsFile /dev/null
+              ConnectTimeout 30
+              ServerAliveInterval 60
+              ServerAliveCountMax 3
+          EOF
+          chmod 600 ~/.ssh/config
+          echo "✅ SSH configured"
+          echo "::endgroup::"
+
+      - name: 🏥 Health check - SSH
+        run: |
+          echo "::group::Testing SSH connection"
+          ssh proxmoxvm "echo 'SSH OK on:' && hostname && docker --version && docker compose version"
+          echo "::endgroup::"
+
+      - name: 🚀 Deploy (docker compose pull + up)
+        env:
+          DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
+          IMAGE_TAG: ${{ steps.vars.outputs.tag-no-v }}
+        run: |
+          echo "::group::Deploying on target"
+          ssh proxmoxvm "
+            set -e
+            cd '${DEPLOY_DIR}'
+
+            # OPTIONAL: login if your Docker Hub repo is private
+            # echo '${{ secrets.DOCKERHUB_TOKEN }}' | docker login -u '${{ secrets.DOCKERHUB_USERNAME }}' --password-stdin
+
+            echo 'Using tag: ${IMAGE_TAG}'
+            export IMAGE_TAG='${IMAGE_TAG}'
+
+            # If your compose uses an env var for the image tag, this will work:
+            docker compose pull
+            docker compose up -d --remove-orphans
+
+            docker image prune -f
+            docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
+          "
+          echo "::endgroup::"
+
+      - name: 🧹 Cleanup SSH key
+        if: always()
+        run: |
+          rm -f ~/.ssh/proxmox_key ~/.ssh/config

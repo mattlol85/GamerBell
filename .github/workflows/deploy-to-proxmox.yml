@@ -35,40 +35,104 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "tag-no-v=$TAG_NO_V" >> "$GITHUB_OUTPUT"
 
-      - name: 🔑 Setup SSH key + host alias
+      - name: 🔑 Start ssh-agent and add private key
+        uses: webfactory/ssh-agent@v0.5.4
+        with:
+          ssh-private-key: ${{ secrets.PROXMOX_SSH_PRIVATE_KEY }}
+
+      - name: 🔧 Setup SSH config + known_hosts
         run: |
-          echo "::group::Setting up SSH"
+          echo "::group::Setting up SSH config and known_hosts"
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
 
-          echo "${{ secrets.PROXMOX_SSH_PRIVATE_KEY }}" > ~/.ssh/proxmox_key
-          chmod 600 ~/.ssh/proxmox_key
-
-          if ! ssh-keygen -y -f ~/.ssh/proxmox_key >/dev/null 2>&1; then
-            echo "❌ Invalid SSH private key format"
-            exit 1
+          # Choose the target VM host/user: prefer DEPLOY_* secrets (the Ubuntu VM) and fall back to PROXMOX_* (if you SSH to the hypervisor)
+          TARGET_HOST="${{ secrets.DEPLOY_HOST }}"
+          if [ -z "$TARGET_HOST" ]; then
+            TARGET_HOST="${{ secrets.PROXMOX_HOST }}"
           fi
 
-          cat > ~/.ssh/config << EOF
-          Host proxmoxvm
-              HostName ${{ secrets.PROXMOX_HOST }}
-              User ${{ secrets.PROXMOX_USER }}
-              IdentityFile ~/.ssh/proxmox_key
-              Port 22
-              StrictHostKeyChecking no
-              UserKnownHostsFile /dev/null
-              ConnectTimeout 30
-              ServerAliveInterval 60
-              ServerAliveCountMax 3
-          EOF
+          TARGET_USER="${{ secrets.DEPLOY_USER }}"
+          if [ -z "$TARGET_USER" ]; then
+            TARGET_USER="${{ secrets.PROXMOX_USER }}"
+          fi
+
+          echo "Using SSH target: $TARGET_USER@$TARGET_HOST"
+
+          # Persist a copy of the key (stripped of CRLFs) so IdentityFile works if needed
+          printf '%s\n' "${{ secrets.PROXMOX_SSH_PRIVATE_KEY }}" | sed 's/\r$//' > ~/.ssh/proxmox_key
+          chmod 600 ~/.ssh/proxmox_key
+
+          # Write SSH config pointing to the *VM* target host (use printf to avoid heredoc indentation issues)
+          printf '%s\n' \
+            "Host proxmoxvm" \
+            "  HostName $TARGET_HOST" \
+            "  User $TARGET_USER" \
+            "  IdentityFile ~/.ssh/proxmox_key" \
+            "  Port 22" \
+            "  ConnectTimeout 30" \
+            "  ServerAliveInterval 60" \
+            "  ServerAliveCountMax 3" \
+            > ~/.ssh/config
           chmod 600 ~/.ssh/config
-          echo "✅ SSH configured"
+
+          # Populate known_hosts with the target host's public key to avoid interactive prompt
+          ssh-keyscan -H "$TARGET_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          chmod 644 ~/.ssh/known_hosts || true
+
+          # Ensure ssh-agent has at least one key (webfactory/ssh-agent usually adds it from the secret)
+          if ! ssh-add -l >/dev/null 2>&1; then
+            # attempt to add the key explicitly in case webfactory action didn't
+            ssh-add ~/.ssh/proxmox_key >/dev/null 2>&1 || true
+          fi
+
+          if ! ssh-add -l >/dev/null 2>&1; then
+            echo "⚠️ ssh-agent has no identities listed; connection may fail"
+          fi
+
+          echo "✅ SSH config and known_hosts written (target: $TARGET_HOST)"
           echo "::endgroup::"
 
       - name: 🏥 Health check - SSH
         run: |
-          echo "::group::Testing SSH connection"
-          ssh proxmoxvm "echo 'SSH OK on:' && hostname && docker --version && docker compose version"
+          echo "::group::Testing SSH connection (BatchMode + debug)"
+
+          # Print which target we're attempting (non-sensitive)
+          echo "DEBUG: target alias: proxmoxvm"
+          grep -E "^Host |HostName |User " ~/.ssh/config || true
+
+          # List ssh-agent identities
+          echo "--- ssh-agent identities (ssh-add -l) ---"
+          ssh-add -l || echo "(no identities listed)"
+
+          # If we have the private key file, derive the public key and show its fingerprint
+          if [ -f ~/.ssh/proxmox_key ]; then
+            echo "--- deriving public key and fingerprint from ~/.ssh/proxmox_key ---"
+            set +e
+            ssh-keygen -y -f ~/.ssh/proxmox_key > /tmp/proxmox_key.pub 2>/dev/null
+            if [ -s /tmp/proxmox_key.pub ]; then
+              ssh-keygen -lf /tmp/proxmox_key.pub || true
+              # show the first 2 lines of the public key for verification (not secret)
+              head -n2 /tmp/proxmox_key.pub || true
+            else
+              echo "(failed to derive public key from private key)"
+            fi
+            rm -f /tmp/proxmox_key.pub
+            set -e
+          else
+            echo "(no ~/.ssh/proxmox_key file present)"
+          fi
+
+          # Show known_hosts line for the target host (if any)
+          echo "--- known_hosts entry for target ---"
+          TARGET_HOST_LINE=$(grep "${{ secrets.DEPLOY_HOST }}\|${{ secrets.PROXMOX_HOST }}" ~/.ssh/known_hosts || true)
+          echo "$TARGET_HOST_LINE"
+
+          # Now attempt SSH (BatchMode)
+          echo "--- attempting SSH (BatchMode, verbose) ---"
+          ssh -vvv -o BatchMode=yes -o ConnectTimeout=15 proxmoxvm "echo 'SSH OK on:' && hostname && docker --version && docker compose version" || (
+            echo "--- SSH debug: listing agent identities ---"; ssh-add -l || true; false
+          )
           echo "::endgroup::"
 
       - name: 🚀 Deploy (docker compose pull + up)
@@ -99,4 +163,5 @@ jobs:
       - name: 🧹 Cleanup SSH key
         if: always()
         run: |
-          rm -f ~/.ssh/proxmox_key ~/.ssh/config
+          # Remove files we created; ssh-agent keys are managed by the webfactory action
+          rm -f ~/.ssh/proxmox_key ~/.ssh/config ~/.ssh/known_hosts || true

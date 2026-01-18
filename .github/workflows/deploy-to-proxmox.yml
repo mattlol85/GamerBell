@@ -93,6 +93,9 @@ jobs:
           echo "✅ SSH config and known_hosts written (target: $TARGET_HOST)"
           echo "::endgroup::"
 
+      - name: Show runner's public key (for debugging)
+        run: ssh-keygen -y -f ~/.ssh/proxmox_key
+
       - name: 🏥 Health check - SSH
         run: |
           echo "::group::Testing SSH connection (BatchMode + debug)"

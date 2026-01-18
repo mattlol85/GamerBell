@@ -135,28 +135,15 @@ jobs:
           )
           echo "::endgroup::"
 
-      - name: 🚀 Deploy (docker compose pull + up)
+      - name: 🚀 Deploy via VM script
         env:
-          DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
           IMAGE_TAG: ${{ steps.vars.outputs.tag-no-v }}
         run: |
           echo "::group::Deploying on target"
           ssh proxmoxvm "
             set -e
-            cd '${DEPLOY_DIR}'
-
-            # OPTIONAL: login if your Docker Hub repo is private
-            # echo '${{ secrets.DOCKERHUB_TOKEN }}' | docker login -u '${{ secrets.DOCKERHUB_USERNAME }}' --password-stdin
-
-            echo 'Using tag: ${IMAGE_TAG}'
-            export IMAGE_TAG='${IMAGE_TAG}'
-
-            # If your compose uses an env var for the image tag, this will work:
-            docker compose pull
-            docker compose up -d --remove-orphans
-
-            docker image prune -f
-            docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
+            echo 'Deploying GamerBell with tag: ${IMAGE_TAG}'
+            /opt/fitznet/scripts/deploy-gamerbell.sh '${IMAGE_TAG}'
           "
           echo "::endgroup::"
 

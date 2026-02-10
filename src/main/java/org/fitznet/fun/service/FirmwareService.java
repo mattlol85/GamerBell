@@ -42,10 +42,11 @@ public class FirmwareService {
     private long lastVersionCheckTime = 0;
     private static final long VERSION_CACHE_DURATION_MS = 60000;
 
-    public FirmwareService(WebClient.Builder webClientBuilder) {
+    public FirmwareService(WebClient.Builder webClientBuilder,
+                           @Value("${firmware.github.api.base-url:https://api.github.com}") String githubApiBaseUrl) {
         // WebClient for GitHub API calls
         this.apiWebClient = webClientBuilder
-                .baseUrl("https://api.github.com")
+                .baseUrl(githubApiBaseUrl)
                 .build();
 
 

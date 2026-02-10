@@ -131,6 +131,7 @@ docker build -t mattlol85/bell-api:local .
 ### Run Tests
 
 ```bash
+# Includes WireMock-based tests for firmware update flows
 ./gradlew test
 ```
 

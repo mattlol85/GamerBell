@@ -19,6 +19,9 @@ import static org.fitznet.fun.utils.Constants.ESP32_MAC_ADDRESS_HEADER;
 import static org.fitznet.fun.utils.Constants.ESP32_VERSION_HEADER;
 import static org.fitznet.fun.utils.Constants.LATEST_VERSION_HEADER;
 
+/**
+ * REST controller for GamerBell API endpoints including session count and firmware updates.
+ */
 @Slf4j
 @RestController
 public class GamerBellController {
@@ -27,11 +30,23 @@ public class GamerBellController {
 
     final FirmwareService firmwareService;
 
+    /**
+     * Constructs a new GamerBellController with required services.
+     *
+     * @param buttonService   service for managing WebSocket sessions
+     * @param firmwareService service for firmware version management
+     */
     public GamerBellController(ButtonService buttonService, FirmwareService firmwareService) {
         this.buttonService = buttonService;
         this.firmwareService = firmwareService;
     }
 
+    /**
+     * Returns the current count of active WebSocket sessions.
+     *
+     * @return JSON string containing the session count
+     * @throws JsonProcessingException if serialization fails
+     */
     @GetMapping(value = "/count", produces = MediaType.APPLICATION_JSON_VALUE)
     public String getCount() throws JsonProcessingException {
 
@@ -42,6 +57,13 @@ public class GamerBellController {
         return JsonUtils.OBJECT_MAPPER.writeValueAsString(bellCountDto);
     }
 
+    /**
+     * Checks for firmware updates and serves the latest firmware binary if available.
+     *
+     * @param currentVersion the current firmware version from the ESP32 device header
+     * @param deviceMac      the MAC address of the ESP32 device
+     * @return firmware binary if update available, 304 if up-to-date, or error status
+     */
     @GetMapping("/api/firmware/latest")
     public ResponseEntity<Resource> checkForUpdate(
             @RequestHeader(value = ESP32_VERSION_HEADER, required = false) String currentVersion,

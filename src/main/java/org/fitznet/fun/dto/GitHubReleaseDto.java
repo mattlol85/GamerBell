@@ -10,6 +10,9 @@ import lombok.NoArgsConstructor;
 import java.time.OffsetDateTime;
 import java.util.List;
 
+/**
+ * Represents a GitHub release retrieved from the GitHub API.
+ */
 @Data
 @Builder
 @NoArgsConstructor
@@ -43,34 +46,5 @@ public class GitHubReleaseDto {
 
     @JsonProperty("html_url")
     private String htmlUrl;
-
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class GitHubAssetDto {
-
-        @JsonProperty("name")
-        private String name;
-
-        @JsonProperty("size")
-        private Long size;
-
-        @JsonProperty("browser_download_url")
-        private String browserDownloadUrl;
-
-        @JsonProperty("content_type")
-        private String contentType;
-
-        @JsonProperty("state")
-        private String state;
-
-        @JsonProperty("created_at")
-        private OffsetDateTime createdAt;
-
-        @JsonProperty("updated_at")
-        private OffsetDateTime updatedAt;
-    }
 }
 

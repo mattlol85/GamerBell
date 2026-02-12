@@ -1,6 +1,7 @@
 package org.fitznet.fun.service;
 
 import lombok.extern.slf4j.Slf4j;
+import org.fitznet.fun.dto.GitHubAssetDto;
 import org.fitznet.fun.dto.GitHubReleaseDto;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
@@ -8,6 +9,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException.NotFound;
 import reactor.netty.http.client.HttpClient;
 
 import java.io.File;
@@ -18,9 +20,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 
-import static org.springframework.web.reactive.function.client.WebClientResponseException.*;
-import static reactor.netty.http.client.HttpClient.*;
-
+/**
+ * Service for managing firmware updates from GitHub releases.
+ */
 @Slf4j
 @Service
 public class FirmwareService {
@@ -42,6 +44,12 @@ public class FirmwareService {
     private long lastVersionCheckTime = 0;
     private static final long VERSION_CACHE_DURATION_MS = 60000;
 
+    /**
+     * Constructs a FirmwareService with WebClient configuration.
+     *
+     * @param webClientBuilder  builder for creating WebClient instances
+     * @param githubApiBaseUrl  base URL for GitHub API calls
+     */
     public FirmwareService(WebClient.Builder webClientBuilder,
                            @Value("${firmware.github.api.base-url:https://api.github.com}") String githubApiBaseUrl) {
         // WebClient for GitHub API calls
@@ -50,7 +58,7 @@ public class FirmwareService {
                 .build();
 
 
-        HttpClient httpClient = create().followRedirect(true);
+        HttpClient httpClient = HttpClient.create().followRedirect(true);
 
         this.downloadWebClient = WebClient.builder()
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
@@ -157,7 +165,7 @@ public class FirmwareService {
                     return false;
                 }
 
-                for (GitHubReleaseDto.GitHubAssetDto asset : release.getAssets()) {
+                for (GitHubAssetDto asset : release.getAssets()) {
                     String name = asset.getName();
                     // Look for .bin file
                     if (name.endsWith(".bin")) {
@@ -169,7 +177,7 @@ public class FirmwareService {
 
                 // Log available assets for troubleshooting
                 String availableFiles = release.getAssets().stream()
-                        .map(GitHubReleaseDto.GitHubAssetDto::getName)
+                        .map(GitHubAssetDto::getName)
                         .reduce((a, b) -> a + ", " + b)
                         .orElse("none");
                 log.error("GitHub release {} has assets but no .bin file found. Available files: {}",

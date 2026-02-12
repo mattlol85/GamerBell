@@ -5,6 +5,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/**
+ * Data transfer object representing the count of active WebSocket sessions.
+ */
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor

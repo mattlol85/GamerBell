@@ -18,21 +18,21 @@ jobs:
       should-release: ${{ steps.release_check.outputs.should-release }}
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: ☕ Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
 
       - name: ✅ Validate Gradle wrapper
-        uses: gradle/wrapper-validation-action@v2
+        uses: gradle/actions/wrapper-validation@v5
 
       - name: 🔧 Setup Gradle cache
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
 
       - name: 🔨 Make gradlew executable
         run: chmod +x ./gradlew
@@ -55,7 +55,7 @@ jobs:
           echo "jar-name=$(basename "$JAR_FILE")" >> $GITHUB_OUTPUT
 
       - name: 📤 Upload JAR artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: application-jar
           path: ${{ steps.artifact.outputs.jar-path }}
@@ -102,7 +102,7 @@ jobs:
       emoji: ${{ steps.version_calc.outputs.emoji }}
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -205,12 +205,12 @@ jobs:
     if: needs.version.result == 'success'
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: 📥 Download JAR artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: application-jar
           path: downloaded-jar
@@ -269,7 +269,7 @@ jobs:
     if: needs.version.result == 'success' && needs.release.result == 'success'
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.version.outputs.new-version }}
 
@@ -297,7 +297,7 @@ jobs:
             type=sha,prefix=
 
       - name: 🐳 Build and push Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64
@@ -311,7 +311,7 @@ jobs:
         timeout-minutes: 30
 
       - name: 📝 Update Docker Hub description
-        uses: peter-evans/dockerhub-description@v4
+        uses: peter-evans/dockerhub-description@v5
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}

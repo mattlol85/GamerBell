@@ -1,11 +1,80 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <include resource="org/springframework/boot/logging/logback/base.xml"/>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!-- Define service name from Spring properties -->
+    <springProperty scope="context" name="serviceName" source="spring.application.name" defaultValue="gamer-bell"/>
+    <springProperty scope="context" name="environment" source="spring.profiles.active" defaultValue="default"/>
+
+    <!-- JSON Console Appender for Loki/Promtail -->
     <appender name="CONSOLE_JSON" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <!-- Add custom fields for Loki labels -->
+            <customFields>{"service":"${serviceName}","environment":"${environment}"}</customFields>
+
+            <!-- Include MDC fields automatically -->
+            <includeMdcKeyName>requestId</includeMdcKeyName>
+            <includeMdcKeyName>correlationId</includeMdcKeyName>
+            <includeMdcKeyName>clientIp</includeMdcKeyName>
+            <includeMdcKeyName>requestPath</includeMdcKeyName>
+            <includeMdcKeyName>requestMethod</includeMdcKeyName>
+            <includeMdcKeyName>sessionId</includeMdcKeyName>
+            <includeMdcKeyName>deviceId</includeMdcKeyName>
+            <includeMdcKeyName>deviceMac</includeMdcKeyName>
+            <includeMdcKeyName>userId</includeMdcKeyName>
+
+            <!-- Include caller info for debugging -->
+            <includeCallerData>false</includeCallerData>
+
+            <!-- Shorten field names for efficiency -->
+            <fieldNames>
+                <timestamp>@timestamp</timestamp>
+                <version>[ignore]</version>
+                <levelValue>[ignore]</levelValue>
+            </fieldNames>
+
+            <!-- Include stack traces properly formatted -->
+            <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+                <maxDepthPerThrowable>30</maxDepthPerThrowable>
+                <maxLength>2048</maxLength>
+                <shortenedClassNameLength>20</shortenedClassNameLength>
+                <exclude>sun\.reflect\..*\.invoke.*</exclude>
+                <exclude>net\.sf\.cglib\.proxy\.MethodProxy\.invoke</exclude>
+                <rootCauseFirst>true</rootCauseFirst>
+            </throwableConverter>
+        </encoder>
     </appender>
-    <root level="INFO">
-        <appender-ref ref="CONSOLE_JSON"/>
-    </root>
+
+    <!-- Standard Console Appender for local development -->
+    <appender name="CONSOLE_PLAIN" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %highlight(%-5level) [%thread] %cyan(%logger{36}) - %X{requestId:-} %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Profile-specific configuration -->
+    <springProfile name="local,dev">
+        <root level="DEBUG">
+            <appender-ref ref="CONSOLE_PLAIN"/>
+        </root>
+        <logger name="org.fitznet.fun" level="DEBUG"/>
+        <logger name="org.springframework.web" level="DEBUG"/>
+        <logger name="org.springframework.websocket" level="DEBUG"/>
+    </springProfile>
+
+    <springProfile name="prod,production,default">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE_JSON"/>
+        </root>
+        <logger name="org.fitznet.fun" level="INFO"/>
+        <logger name="org.springframework.web" level="WARN"/>
+        <logger name="org.springframework.websocket" level="INFO"/>
+    </springProfile>
+
+    <!-- Always log these at specific levels -->
+    <logger name="org.hibernate" level="WARN"/>
+    <logger name="org.apache" level="WARN"/>
+    <logger name="io.netty" level="WARN"/>
+    <logger name="reactor.netty" level="WARN"/>
 </configuration>
 

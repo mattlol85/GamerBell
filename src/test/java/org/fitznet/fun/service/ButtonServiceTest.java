@@ -28,6 +28,7 @@ class ButtonServiceTest {
     @Test
     void shouldIncrementCountWhenSessionAdded() {
         WebSocketSession session = mock(WebSocketSession.class);
+        when(session.getId()).thenReturn("test-session-1");
 
         buttonService.addSession(session);
 
@@ -37,6 +38,7 @@ class ButtonServiceTest {
     @Test
     void shouldDecrementCountWhenSessionRemoved() {
         WebSocketSession session = mock(WebSocketSession.class);
+        when(session.getId()).thenReturn("test-session-1");
         buttonService.addSession(session);
 
         buttonService.removeSession(session);
@@ -48,6 +50,8 @@ class ButtonServiceTest {
     void shouldSendMessageToAllOpenSessions() throws IOException {
         WebSocketSession session1 = mock(WebSocketSession.class);
         WebSocketSession session2 = mock(WebSocketSession.class);
+        when(session1.getId()).thenReturn("test-session-1");
+        when(session2.getId()).thenReturn("test-session-2");
         when(session1.isOpen()).thenReturn(true);
         when(session2.isOpen()).thenReturn(true);
 
@@ -64,6 +68,8 @@ class ButtonServiceTest {
     void shouldSkipClosedSessionsWhenBroadcasting() throws IOException {
         WebSocketSession openSession = mock(WebSocketSession.class);
         WebSocketSession closedSession = mock(WebSocketSession.class);
+        when(openSession.getId()).thenReturn("open-session");
+        when(closedSession.getId()).thenReturn("closed-session");
         when(openSession.isOpen()).thenReturn(true);
         when(closedSession.isOpen()).thenReturn(false);
 
@@ -79,6 +85,7 @@ class ButtonServiceTest {
     @Test
     void shouldHandleIOExceptionWhenBroadcasting() throws IOException {
         WebSocketSession session = mock(WebSocketSession.class);
+        when(session.getId()).thenReturn("test-session-1");
         when(session.isOpen()).thenReturn(true);
         doThrow(new IOException("Connection lost")).when(session).sendMessage(any(TextMessage.class));
 
@@ -92,6 +99,32 @@ class ButtonServiceTest {
     void shouldNotThrowWhenLoggingEvent() {
         // Simple smoke test - logEvent just logs
         assertDoesNotThrow(() -> buttonService.logEvent("device-1", "PRESSED"));
+    }
+
+    @Test
+    void shouldHandleNullSessionIdWithoutFailing() {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.getId()).thenReturn(null);
+
+        // Should not throw even with null session ID
+        assertDoesNotThrow(() -> buttonService.addSession(session));
+        assertEquals(1, buttonService.getSessionCount());
+
+        assertDoesNotThrow(() -> buttonService.removeSession(session));
+        assertEquals(0, buttonService.getSessionCount());
+    }
+
+    @Test
+    void shouldHandleNullSessionIdDuringBroadcast() throws IOException {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.getId()).thenReturn(null);
+        when(session.isOpen()).thenReturn(true);
+
+        buttonService.addSession(session);
+
+        // Should not throw even with null session ID
+        assertDoesNotThrow(() -> buttonService.broadcastMessage("test message"));
+        verify(session).sendMessage(any(TextMessage.class));
     }
 }
 

@@ -1,28 +1,25 @@
 package org.fitznet.fun.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
  * Global CORS configuration for GamerBell HTTP endpoints.
- * Allows the Fitz-Net website origins to call /count, /api/firmware/latest, and any
- * future REST endpoints without browser CORS blocks.
+ * Allowed origins are driven by the {@code cors.allowed-origins} property so that
+ * localhost can be added via application-dev.properties without touching production config.
  */
 @Configuration
 public class CorsConfig implements WebMvcConfigurer {
 
+    @Value("${cors.allowed-origins}")
+    private String[] allowedOrigins;
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")
-                .allowedOrigins(
-                        "https://fitznet.org",
-                        "https://www.fitznet.org",
-                        "https://fitznet.doomdns.org",
-                        "https://api.fitznet.doomdns.org",
-                        "https://gamerbell.fitznet.doomdns.org",
-                        "http://localhost:3000"
-                )
+                .allowedOrigins(allowedOrigins)
                 .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .exposedHeaders("Authorization", "Content-Type")
@@ -30,4 +27,3 @@ public class CorsConfig implements WebMvcConfigurer {
                 .maxAge(3600);
     }
 }
-

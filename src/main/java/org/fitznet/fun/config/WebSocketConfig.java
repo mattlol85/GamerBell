@@ -2,6 +2,7 @@ package org.fitznet.fun.config;
 
 import lombok.extern.slf4j.Slf4j;
 import org.fitznet.fun.handler.ButtonWebSocketHandler;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
@@ -17,6 +18,9 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final ButtonWebSocketHandler simpleWebSocketHandler;
+
+    @Value("${cors.allowed-origins}")
+    private String[] allowedOrigins;
 
     /**
      * Constructs WebSocketConfig with the button event handler.
@@ -37,14 +41,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         log.info("Registering WebSocket handler - path=/ws, allowedOrigins=explicit");
         registry.addHandler(simpleWebSocketHandler, "/ws")
-                .setAllowedOrigins(
-                        "https://fitznet.org",
-                        "https://www.fitznet.org",
-                        "https://fitznet.doomdns.org",
-                        "https://api.fitznet.doomdns.org",
-                        "https://gamerbell.fitznet.doomdns.org",
-                        "http://localhost:3000"
-                );
+                .setAllowedOrigins(allowedOrigins);
         log.debug("WebSocket handler registration complete");
     }
 }

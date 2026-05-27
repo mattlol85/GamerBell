@@ -35,9 +35,16 @@ public class WebSocketConfig implements WebSocketConfigurer {
      */
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        log.info("Registering WebSocket handler - path=/ws, allowedOrigins=*");
+        log.info("Registering WebSocket handler - path=/ws, allowedOrigins=explicit");
         registry.addHandler(simpleWebSocketHandler, "/ws")
-                .setAllowedOrigins("*");
+                .setAllowedOrigins(
+                        "https://fitznet.org",
+                        "https://www.fitznet.org",
+                        "https://fitznet.doomdns.org",
+                        "https://api.fitznet.doomdns.org",
+                        "https://gamerbell.fitznet.doomdns.org",
+                        "http://localhost:3000"
+                );
         log.debug("WebSocket handler registration complete");
     }
 }

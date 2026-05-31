@@ -1,5 +1,7 @@
 package org.fitznet.fun.service;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.socket.TextMessage;
@@ -19,10 +21,12 @@ import static org.mockito.Mockito.when;
 class ButtonServiceTest {
 
     private ButtonService buttonService;
+    private MeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() {
-        buttonService = new ButtonService();
+        meterRegistry = new SimpleMeterRegistry();
+        buttonService = new ButtonService(meterRegistry);
     }
 
     @Test
@@ -33,6 +37,7 @@ class ButtonServiceTest {
         buttonService.addSession(session);
 
         assertEquals(1, buttonService.getSessionCount());
+        assertEquals(1.0, meterRegistry.get("gamerbell.websocket.sessions.active").gauge().value());
     }
 
     @Test
@@ -62,6 +67,10 @@ class ButtonServiceTest {
 
         verify(session1).sendMessage(any(TextMessage.class));
         verify(session2).sendMessage(any(TextMessage.class));
+        assertEquals(2.0, meterRegistry.get("gamerbell.broadcast.deliveries.total")
+                .tag("result", "success")
+                .counter()
+                .count());
     }
 
     @Test
@@ -80,6 +89,10 @@ class ButtonServiceTest {
 
         verify(openSession).sendMessage(any(TextMessage.class));
         verify(closedSession, never()).sendMessage(any(TextMessage.class));
+        assertEquals(1.0, meterRegistry.get("gamerbell.broadcast.deliveries.total")
+                .tag("result", "skipped")
+                .counter()
+                .count());
     }
 
     @Test
@@ -93,6 +106,10 @@ class ButtonServiceTest {
 
         // Should not throw
         assertDoesNotThrow(() -> buttonService.broadcastMessage("test message"));
+        assertEquals(1.0, meterRegistry.get("gamerbell.broadcast.deliveries.total")
+                .tag("result", "failure")
+                .counter()
+                .count());
     }
 
     @Test
@@ -127,4 +144,3 @@ class ButtonServiceTest {
         verify(session).sendMessage(any(TextMessage.class));
     }
 }
-

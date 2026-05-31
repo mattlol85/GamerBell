@@ -1,5 +1,7 @@
 package org.fitznet.fun.controller;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import org.fitznet.fun.config.TestMetricsConfiguration;
 import org.fitznet.fun.service.ButtonService;
 import org.fitznet.fun.service.FirmwareService;
 import org.junit.jupiter.api.Test;
@@ -7,6 +9,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.web.servlet.MockMvc;
@@ -18,6 +21,7 @@ import java.nio.file.Path;
 import static org.fitznet.fun.utils.Constants.ESP32_ERROR_HEADER;
 import static org.fitznet.fun.utils.Constants.ESP32_VERSION_HEADER;
 import static org.fitznet.fun.utils.Constants.LATEST_VERSION_HEADER;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -27,11 +31,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+@Import(TestMetricsConfiguration.class)
 @WebMvcTest(GamerBellController.class)
 class GamerBellControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     @MockitoBean
     private ButtonService buttonService;
@@ -61,6 +69,10 @@ class GamerBellControllerTest {
 
         verify(firmwareService, times(1)).getLatestVersion();
         verifyNoMoreInteractions(firmwareService);
+        assertEquals(1.0, meterRegistry.get("gamerbell.firmware.checks.total")
+                .tag("outcome", "up_to_date")
+                .counter()
+                .count());
     }
 
     @Test
@@ -77,6 +89,10 @@ class GamerBellControllerTest {
 
         verify(firmwareService, times(1)).deleteOldFirmware();
         verify(firmwareService, times(1)).downloadLatestFirmware("v1.0.1");
+        assertEquals(1.0, meterRegistry.get("gamerbell.firmware.checks.total")
+                .tag("outcome", "download_failed")
+                .counter()
+                .count());
     }
 
     @Test
@@ -94,6 +110,10 @@ class GamerBellControllerTest {
                 .andExpect(header().string(LATEST_VERSION_HEADER, "v1.0.2"))
                 .andExpect(header().string(HttpHeaders.CONTENT_LENGTH, "3"))
                 .andExpect(content().bytes(new byte[]{1, 2, 3}));
+        assertEquals(1.0, meterRegistry.get("gamerbell.firmware.checks.total")
+                .tag("outcome", "update_served")
+                .counter()
+                .count());
     }
 
     private Path createFirmwareFile(Path path) throws IOException {
@@ -101,6 +121,4 @@ class GamerBellControllerTest {
         return path;
     }
 }
-
-
 

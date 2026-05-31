@@ -1,5 +1,7 @@
 package org.fitznet.fun.service;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.fitznet.fun.dto.GitHubAssetDto;
 import org.fitznet.fun.dto.GitHubReleaseDto;
@@ -29,6 +31,7 @@ public class FirmwareService {
 
     private final WebClient apiWebClient;
     private final WebClient downloadWebClient;
+    private final MeterRegistry meterRegistry;
 
     @Value("${firmware.github.repo:}")
     private String githubRepo;
@@ -49,9 +52,13 @@ public class FirmwareService {
      *
      * @param webClientBuilder  builder for creating WebClient instances
      * @param githubApiBaseUrl  base URL for GitHub API calls
+     * @param meterRegistry     Micrometer registry for firmware metrics
      */
     public FirmwareService(WebClient.Builder webClientBuilder,
-                           @Value("${firmware.github.api.base-url:https://api.github.com}") String githubApiBaseUrl) {
+                           @Value("${firmware.github.api.base-url:https://api.github.com}") String githubApiBaseUrl,
+                           MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+
         // WebClient for GitHub API calls
         this.apiWebClient = webClientBuilder
                 .baseUrl(githubApiBaseUrl)
@@ -140,12 +147,15 @@ public class FirmwareService {
      * @return true if download successful
      */
     public boolean downloadLatestFirmware(String version) {
-        if (githubRepo == null || githubRepo.isEmpty()) {
-            log.warn("Cannot download firmware: GitHub repo not configured");
-            return false;
-        }
+        Timer.Sample sample = Timer.start(meterRegistry);
+        boolean downloadSuccessful = false;
 
         try {
+            if (githubRepo == null || githubRepo.isEmpty()) {
+                log.warn("Cannot download firmware: GitHub repo not configured");
+                return false;
+            }
+
             log.info("Attempting to download firmware version {} from GitHub repo: {}", version, githubRepo);
 
             // Get release assets
@@ -171,7 +181,8 @@ public class FirmwareService {
                     if (name.endsWith(".bin")) {
                         String downloadUrl = asset.getBrowserDownloadUrl();
                         log.info("Found firmware binary: {} ({} bytes)", name, asset.getSize());
-                        return downloadFirmwareFromUrl(downloadUrl, version);
+                        downloadSuccessful = downloadFirmwareFromUrl(downloadUrl, version);
+                        return downloadSuccessful;
                     }
                 }
 
@@ -194,6 +205,8 @@ public class FirmwareService {
         } catch (Exception e) {
             log.error("Failed to download firmware from GitHub: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             return false;
+        } finally {
+            recordFirmwareDownload(downloadSuccessful, sample);
         }
     }
 
@@ -293,5 +306,13 @@ public class FirmwareService {
             log.error("Failed to delete old firmware file: {}", e.getMessage(), e);
         }
     }
-}
 
+    private void recordFirmwareDownload(boolean successful, Timer.Sample sample) {
+        String outcome = successful ? "success" : "failure";
+        meterRegistry.counter("gamerbell.firmware.downloads.total", "outcome", outcome).increment();
+        sample.stop(Timer.builder("gamerbell.firmware.download.duration")
+                .description("Time spent fetching and caching firmware from GitHub")
+                .tag("outcome", outcome)
+                .register(meterRegistry));
+    }
+}

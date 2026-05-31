@@ -1,6 +1,8 @@
 package org.fitznet.fun.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.fitznet.fun.dto.BellCountDto;
 import org.fitznet.fun.service.ButtonService;
@@ -34,16 +36,21 @@ public class GamerBellController {
     final ButtonService buttonService;
 
     final FirmwareService firmwareService;
+    final MeterRegistry meterRegistry;
 
     /**
      * Constructs a new GamerBellController with required services.
      *
      * @param buttonService   service for managing WebSocket sessions
      * @param firmwareService service for firmware version management
+     * @param meterRegistry   Micrometer registry for firmware request metrics
      */
-    public GamerBellController(ButtonService buttonService, FirmwareService firmwareService) {
+    public GamerBellController(ButtonService buttonService,
+                               FirmwareService firmwareService,
+                               MeterRegistry meterRegistry) {
         this.buttonService = buttonService;
         this.firmwareService = firmwareService;
+        this.meterRegistry = meterRegistry;
         log.info("GamerBellController initialized");
     }
 
@@ -84,6 +91,8 @@ public class GamerBellController {
             @RequestHeader(value = ESP32_MAC_ADDRESS_HEADER, required = false) String deviceMac) {
 
         long startTime = System.currentTimeMillis();
+        Timer.Sample firmwareCheckSample = Timer.start(meterRegistry);
+        String checkOutcome = "error";
 
         try {
             // Set MDC context for device tracking
@@ -103,6 +112,7 @@ public class GamerBellController {
 
             if (currentVersion != null && currentVersion.equals(latestVersion)) {
                 long duration = System.currentTimeMillis() - startTime;
+                checkOutcome = "up_to_date";
                 log.info("Device firmware up-to-date - deviceMac={}, version={}, responseTimeMs={}",
                         deviceMac != null ? deviceMac : "unknown",
                         currentVersion,
@@ -127,6 +137,7 @@ public class GamerBellController {
                 boolean downloaded = firmwareService.downloadLatestFirmware(latestVersion);
                 if (!downloaded) {
                     long duration = System.currentTimeMillis() - startTime;
+                    checkOutcome = "download_failed";
                     log.error("Firmware download failed - version={}, deviceMac={}, responseTimeMs={}",
                             latestVersion,
                             deviceMac != null ? deviceMac : "unknown",
@@ -153,6 +164,7 @@ public class GamerBellController {
                         latestVersion,
                         firmwareSize,
                         duration);
+                checkOutcome = "update_served";
 
                 return ResponseEntity.ok()
                         .header(LATEST_VERSION_HEADER, latestVersion)
@@ -162,6 +174,7 @@ public class GamerBellController {
 
             } catch (Exception e) {
                 long duration = System.currentTimeMillis() - startTime;
+                checkOutcome = "serve_failed";
                 log.error("Error serving firmware - deviceMac={}, error={}, errorType={}, responseTimeMs={}",
                         deviceMac != null ? deviceMac : "unknown",
                         e.getMessage(),
@@ -175,7 +188,15 @@ public class GamerBellController {
         } finally {
             MDC.remove(MDC_DEVICE_MAC);
             MDC.remove(MDC_DEVICE_VERSION);
+            recordFirmwareCheck(checkOutcome, firmwareCheckSample);
         }
     }
 
+    private void recordFirmwareCheck(String outcome, Timer.Sample sample) {
+        meterRegistry.counter("gamerbell.firmware.checks.total", "outcome", outcome).increment();
+        sample.stop(Timer.builder("gamerbell.firmware.check.duration")
+                .description("Time spent handling OTA firmware checks")
+                .tag("outcome", outcome)
+                .register(meterRegistry));
+    }
 }

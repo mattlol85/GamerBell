@@ -1,5 +1,8 @@
 package org.fitznet.fun.service;
 
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.socket.TextMessage;
@@ -18,9 +21,23 @@ import java.util.concurrent.atomic.AtomicLong;
 public class ButtonService {
 
     private final CopyOnWriteArrayList<WebSocketSession> sessions = new CopyOnWriteArrayList<>();
+    private final MeterRegistry meterRegistry;
     private final AtomicLong totalSessionsCreated = new AtomicLong(0);
     private final AtomicLong totalMessagesBroadcast = new AtomicLong(0);
     private final AtomicLong totalBroadcastFailures = new AtomicLong(0);
+
+    /**
+     * Constructs a new ButtonService and registers WebSocket metrics.
+     *
+     * @param meterRegistry Micrometer registry for custom metrics
+     */
+    public ButtonService(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+
+        Gauge.builder("gamerbell.websocket.sessions.active", sessions, CopyOnWriteArrayList::size)
+                .description("Current number of active WebSocket sessions")
+                .register(meterRegistry);
+    }
 
     /**
      * Adds a WebSocket session to the active sessions list.
@@ -79,12 +96,14 @@ public class ButtonService {
      * @param message the message to broadcast
      */
     public void broadcastMessage(String message) {
+        Timer.Sample sample = Timer.start(meterRegistry);
         int totalSessions = sessions.size();
         int successCount = 0;
         int failureCount = 0;
         int skippedCount = 0;
 
         long broadcastNumber = totalMessagesBroadcast.incrementAndGet();
+        meterRegistry.counter("gamerbell.broadcasts.total").increment();
 
         log.debug("Starting broadcast #{} - targetSessions={}, messageLength={}",
                 broadcastNumber,
@@ -132,6 +151,13 @@ public class ButtonService {
                     failureCount,
                     totalBroadcastFailures.get());
         }
+
+        incrementDeliveryMetric("success", successCount);
+        incrementDeliveryMetric("failure", failureCount);
+        incrementDeliveryMetric("skipped", skippedCount);
+        sample.stop(Timer.builder("gamerbell.broadcast.duration")
+                .description("Time spent broadcasting button events to connected sessions")
+                .register(meterRegistry));
     }
 
     /**
@@ -184,5 +210,12 @@ public class ButtonService {
                 .map(this::getSessionId)
                 .reduce((a, b) -> a + "," + b)
                 .orElse("none");
+    }
+
+    private void incrementDeliveryMetric(String result, int count) {
+        if (count > 0) {
+            meterRegistry.counter("gamerbell.broadcast.deliveries.total", "result", result)
+                    .increment(count);
+        }
     }
 }

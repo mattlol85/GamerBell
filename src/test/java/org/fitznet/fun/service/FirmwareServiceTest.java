@@ -13,6 +13,12 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.configureFor;
@@ -142,5 +148,64 @@ class FirmwareServiceTest {
 
         ReflectionTestUtils.setField(firmwareService, "cachedFirmwareVersion", "v1.0.0");
         assertFalse(firmwareService.isFirmwareUpToDate("v1.0.0"));
+    }
+
+    @Test
+    void shouldNotThrowWhenDeletingAlreadyAbsentFirmware() {
+        // Calling deleteOldFirmware() when no file exists must not throw NoSuchFileException
+        firmwareService.deleteOldFirmware();
+        firmwareService.deleteOldFirmware();
+    }
+
+    @Test
+    void shouldOnlyDownloadOnceWhenConcurrentRequestsArriveSimultaneously() throws Exception {
+        wireMockServer.stubFor(get(urlEqualTo("/repos/owner/repo/releases/tags/v1.0.0"))
+                .willReturn(okJson("{" +
+                        "\"tag_name\":\"v1.0.0\"," +
+                        "\"assets\":[{" +
+                        "\"name\":\"firmware.bin\"," +
+                        "\"size\":3," +
+                        "\"browser_download_url\":\"http://localhost:" + wireMockServer.port() + "/downloads/firmware.bin\"" +
+                        "}]" +
+                        "}")));
+        wireMockServer.stubFor(get(urlEqualTo("/downloads/firmware.bin"))
+                .willReturn(aResponse().withStatus(200).withBody(new byte[]{1, 2, 3})));
+
+        int threadCount = 5;
+        CountDownLatch startGate = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        List<Future<Boolean>> futures = new ArrayList<>();
+
+        for (int i = 0; i < threadCount; i++) {
+            futures.add(executor.submit(() -> {
+                startGate.await();
+                return firmwareService.ensureFirmwareReady("v1.0.0");
+            }));
+        }
+
+        startGate.countDown();
+        executor.shutdown();
+
+        for (Future<Boolean> f : futures) {
+            assertTrue(f.get(), "All concurrent calls should succeed");
+        }
+
+        Path firmwarePath = tempDir.resolve("firmware.bin");
+        assertTrue(Files.exists(firmwarePath));
+        assertEquals(3, Files.size(firmwarePath));
+    }
+
+    @Test
+    void shouldReturnTrueImmediatelyWhenFirmwareAlreadyUpToDate() throws Exception {
+        // Pre-seed a firmware file and mark its version as current
+        Path firmwarePath = tempDir.resolve("firmware.bin");
+        Files.write(firmwarePath, new byte[]{1, 2, 3});
+        ReflectionTestUtils.setField(firmwareService, "cachedFirmwareVersion", "v1.0.0");
+
+        boolean result = firmwareService.ensureFirmwareReady("v1.0.0");
+
+        assertTrue(result);
+        // No GitHub calls should have been made
+        wireMockServer.verify(0, getRequestedFor(urlEqualTo("/repos/owner/repo/releases/tags/v1.0.0")));
     }
 }

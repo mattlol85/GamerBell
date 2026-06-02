@@ -1,5 +1,6 @@
 package org.fitznet.fun.handler;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.fitznet.fun.dto.ButtonEventDto;
@@ -28,14 +29,17 @@ public class ButtonWebSocketHandler extends TextWebSocketHandler {
     private static final String MDC_CLIENT_IP = "clientIp";
 
     private final ButtonService buttonService;
+    private final MeterRegistry meterRegistry;
 
     /**
      * Constructs a new ButtonWebSocketHandler with the required service.
      *
      * @param buttonService service for managing sessions and broadcasting messages
+     * @param meterRegistry Micrometer registry for button event metrics
      */
-    public ButtonWebSocketHandler(ButtonService buttonService) {
+    public ButtonWebSocketHandler(ButtonService buttonService, MeterRegistry meterRegistry) {
         this.buttonService = buttonService;
+        this.meterRegistry = meterRegistry;
     }
 
     /**
@@ -116,6 +120,7 @@ public class ButtonWebSocketHandler extends TextWebSocketHandler {
                     truncatePayload(payload));
 
             ButtonEventDto event = OBJECT_MAPPER.readValue(payload, ButtonEventDto.class);
+            String eventName = event.getButtonEvent().name().toLowerCase();
 
             MDC.put(MDC_DEVICE_ID, nullSafe(event.getDeviceId()));
 
@@ -125,6 +130,7 @@ public class ButtonWebSocketHandler extends TextWebSocketHandler {
                     nullSafe(event.getFirmwareVersion()));
 
             if (PRESSED.equals(event.getButtonEvent()) || RELEASED.equals(event.getButtonEvent())) {
+                meterRegistry.counter("gamerbell.button.events.total", "event", eventName).increment();
                 String responseJson = OBJECT_MAPPER.writeValueAsString(event);
 
                 log.info("Broadcasting button event to clients - eventType={}, deviceId={}, connectedClients={}",
@@ -137,12 +143,15 @@ public class ButtonWebSocketHandler extends TextWebSocketHandler {
                 long duration = System.currentTimeMillis() - startTime;
                 log.debug("Message processing completed - processingTimeMs={}", duration);
             } else {
+                meterRegistry.counter("gamerbell.button.events.total", "event", eventName).increment();
                 log.warn("Ignoring unknown button event type - eventType={}, deviceId={}",
                         event.getButtonEvent(),
                         nullSafe(event.getDeviceId()));
             }
 
         } catch (Exception e) {
+            meterRegistry.counter("gamerbell.button.events.total", "event", "invalid").increment();
+            meterRegistry.counter("gamerbell.websocket.errors.total", "type", "message_processing").increment();
             long duration = System.currentTimeMillis() - startTime;
             log.error("Error handling WebSocket message - sessionId={}, error={}, errorType={}, processingTimeMs={}",
                     getSessionId(session),
@@ -165,6 +174,7 @@ public class ButtonWebSocketHandler extends TextWebSocketHandler {
     public void handleTransportError(@NonNull WebSocketSession session, @NonNull Throwable exception) {
         try {
             setupSessionMDC(session);
+            meterRegistry.counter("gamerbell.websocket.errors.total", "type", "transport").increment();
 
             log.error("WebSocket transport error - sessionId={}, error={}, errorType={}",
                     getSessionId(session),

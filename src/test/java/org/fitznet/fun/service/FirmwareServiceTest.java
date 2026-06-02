@@ -1,6 +1,8 @@
 package org.fitznet.fun.service;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +29,7 @@ class FirmwareServiceTest {
 
     private WireMockServer wireMockServer;
     private FirmwareService firmwareService;
+    private MeterRegistry meterRegistry;
 
     @TempDir
     Path tempDir;
@@ -37,7 +40,8 @@ class FirmwareServiceTest {
         wireMockServer.start();
         configureFor("localhost", wireMockServer.port());
 
-        firmwareService = new FirmwareService(WebClient.builder(), "http://localhost:" + wireMockServer.port());
+        meterRegistry = new SimpleMeterRegistry();
+        firmwareService = new FirmwareService(WebClient.builder(), "http://localhost:" + wireMockServer.port(), meterRegistry);
         ReflectionTestUtils.setField(firmwareService, "githubRepo", "owner/repo");
         ReflectionTestUtils.setField(firmwareService, "firmwareStoragePath", tempDir.toString());
         ReflectionTestUtils.setField(firmwareService, "firmwareFilename", "firmware.bin");
@@ -94,6 +98,10 @@ class FirmwareServiceTest {
         Path firmwarePath = tempDir.resolve("firmware.bin");
         assertTrue(Files.exists(firmwarePath));
         assertEquals(3, Files.size(firmwarePath));
+        assertEquals(1.0, meterRegistry.get("gamerbell.firmware.downloads.total")
+                .tag("outcome", "success")
+                .counter()
+                .count());
     }
 
     @Test
@@ -121,6 +129,10 @@ class FirmwareServiceTest {
         boolean result = firmwareService.downloadLatestFirmware("v1.0.0");
 
         assertFalse(result);
+        assertEquals(1.0, meterRegistry.get("gamerbell.firmware.downloads.total")
+                .tag("outcome", "failure")
+                .counter()
+                .count());
     }
 
     @Test
@@ -132,4 +144,3 @@ class FirmwareServiceTest {
         assertFalse(firmwareService.isFirmwareUpToDate("v1.0.0"));
     }
 }
-

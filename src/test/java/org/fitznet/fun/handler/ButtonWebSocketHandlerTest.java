@@ -1,5 +1,7 @@
 package org.fitznet.fun.handler;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.fitznet.fun.dto.ButtonEventDto;
 import org.fitznet.fun.service.ButtonService;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,11 +22,13 @@ class ButtonWebSocketHandlerTest {
 
     private ButtonService buttonService;
     private ButtonWebSocketHandler handler;
+    private MeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
         buttonService = mock(ButtonService.class);
-        handler = new ButtonWebSocketHandler(buttonService);
+        handler = new ButtonWebSocketHandler(buttonService, meterRegistry);
     }
 
     @Test
@@ -46,6 +50,10 @@ class ButtonWebSocketHandlerTest {
         ButtonEventDto result = OBJECT_MAPPER.readValue(messageCaptor.getValue(), ButtonEventDto.class);
         assertEquals(event.getButtonEvent(), result.getButtonEvent());
         assertEquals(event.getDeviceId(), result.getDeviceId());
+        assertEquals(1.0, meterRegistry.get("gamerbell.button.events.total")
+                .tag("event", "pressed")
+                .counter()
+                .count());
     }
 
     @Test
@@ -63,6 +71,10 @@ class ButtonWebSocketHandlerTest {
         handler.handleTextMessage(session, new TextMessage(payload));
 
         verify(buttonService, never()).broadcastMessage(anyString());
+        assertEquals(1.0, meterRegistry.get("gamerbell.button.events.total")
+                .tag("event", "held")
+                .counter()
+                .count());
     }
 
     @Test
@@ -73,6 +85,13 @@ class ButtonWebSocketHandlerTest {
         handler.handleTextMessage(session, new TextMessage("{invalid"));
 
         verify(buttonService, never()).broadcastMessage(anyString());
+        assertEquals(1.0, meterRegistry.get("gamerbell.button.events.total")
+                .tag("event", "invalid")
+                .counter()
+                .count());
+        assertEquals(1.0, meterRegistry.get("gamerbell.websocket.errors.total")
+                .tag("type", "message_processing")
+                .counter()
+                .count());
     }
 }
-

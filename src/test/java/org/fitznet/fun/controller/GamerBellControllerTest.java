@@ -78,17 +78,14 @@ class GamerBellControllerTest {
     @Test
     void shouldReturnServiceUnavailableWhenDownloadFails() throws Exception {
         when(firmwareService.getLatestVersion()).thenReturn("v1.0.1");
-        when(firmwareService.isFirmwareUpToDate("v1.0.1")).thenReturn(false);
-        when(firmwareService.isFirmwareMissing()).thenReturn(true);
-        when(firmwareService.downloadLatestFirmware("v1.0.1")).thenReturn(false);
+        when(firmwareService.ensureFirmwareReady("v1.0.1")).thenReturn(false);
 
         mockMvc.perform(get("/api/firmware/latest"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(header().string(ESP32_ERROR_HEADER,
                         "No firmware available. Create GitHub release or add local firmware.bin"));
 
-        verify(firmwareService, times(1)).deleteOldFirmware();
-        verify(firmwareService, times(1)).downloadLatestFirmware("v1.0.1");
+        verify(firmwareService, times(1)).ensureFirmwareReady("v1.0.1");
         assertEquals(1.0, meterRegistry.get("gamerbell.firmware.checks.total")
                 .tag("outcome", "download_failed")
                 .counter()
@@ -101,8 +98,7 @@ class GamerBellControllerTest {
         FileSystemResource firmwareResource = new FileSystemResource(firmwarePath);
 
         when(firmwareService.getLatestVersion()).thenReturn("v1.0.2");
-        when(firmwareService.isFirmwareUpToDate("v1.0.2")).thenReturn(true);
-        when(firmwareService.isFirmwareMissing()).thenReturn(false);
+        when(firmwareService.ensureFirmwareReady("v1.0.2")).thenReturn(true);
         when(firmwareService.getFirmwareFile()).thenReturn(firmwareResource);
 
         mockMvc.perform(get("/api/firmware/latest"))

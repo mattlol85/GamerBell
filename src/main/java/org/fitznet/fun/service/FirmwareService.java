@@ -13,14 +13,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException.NotFound;
 import reactor.netty.http.client.HttpClient;
+import reactor.util.retry.Retry;
 
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Service for managing firmware updates from GitHub releases.
@@ -32,6 +33,7 @@ public class FirmwareService {
     private final WebClient apiWebClient;
     private final WebClient downloadWebClient;
     private final MeterRegistry meterRegistry;
+    private final ReentrantLock downloadLock = new ReentrantLock();
 
     @Value("${firmware.github.repo:}")
     private String githubRepo;
@@ -43,7 +45,7 @@ public class FirmwareService {
     private String firmwareFilename;
 
     private String cachedLatestVersion;
-    private String cachedFirmwareVersion; // The version of the firmware.bin file we have
+    private String cachedFirmwareVersion;
     private long lastVersionCheckTime = 0;
     private static final long VERSION_CACHE_DURATION_MS = 60000;
 
@@ -59,28 +61,25 @@ public class FirmwareService {
                            MeterRegistry meterRegistry) {
         this.meterRegistry = meterRegistry;
 
-        // WebClient for GitHub API calls
         this.apiWebClient = webClientBuilder
                 .baseUrl(githubApiBaseUrl)
                 .build();
 
-
         HttpClient httpClient = HttpClient.create().followRedirect(true);
-
         this.downloadWebClient = WebClient.builder()
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .codecs(configurer -> configurer
                         .defaultCodecs()
-                        .maxInMemorySize(10 * 1024 * 1024)) // 10MB buffer
+                        .maxInMemorySize(10 * 1024 * 1024))
                 .build();
     }
 
     /**
-     * Fetches the latest release version from GitHub
-     * @return Latest version tag (e.g., "v1.0.1") or null if not available
+     * Fetches the latest release version from GitHub.
+     *
+     * @return latest version tag (e.g., "v1.0.1") or fallback default
      */
     public String getLatestVersion() {
-        // Return cached version if still valid
         if (cachedLatestVersion != null &&
             (System.currentTimeMillis() - lastVersionCheckTime) < VERSION_CACHE_DURATION_MS) {
             log.debug("Returning cached version: {}", cachedLatestVersion);
@@ -119,31 +118,56 @@ public class FirmwareService {
                      e.getClass().getSimpleName(), e.getMessage());
         }
 
-        // Fallback to cached version or default
         return cachedLatestVersion != null ? cachedLatestVersion : "v1.0.0";
     }
 
     /**
-     * Gets the firmware binary file as a Resource
+     * Ensures the firmware for the given version is cached locally, downloading it if necessary.
+     * This method is thread-safe: only one download executes at a time per version, and
+     * subsequent callers reuse the cached result without re-downloading.
+     *
+     * @param latestVersion the version that must be cached
+     * @return true if firmware is ready to serve, false if download failed
+     */
+    public boolean ensureFirmwareReady(String latestVersion) {
+        if (isFirmwareUpToDate(latestVersion)) {
+            return true;
+        }
+
+        downloadLock.lock();
+        try {
+            // Re-check after acquiring the lock — another thread may have finished the download
+            if (isFirmwareUpToDate(latestVersion)) {
+                return true;
+            }
+            deleteOldFirmware();
+            return downloadLatestFirmware(latestVersion);
+        } finally {
+            downloadLock.unlock();
+        }
+    }
+
+    /**
+     * Gets the firmware binary file as a Resource.
+     *
      * @return Resource pointing to the firmware file
      */
     public Resource getFirmwareFile() {
         Path firmwarePath = Paths.get(firmwareStoragePath, firmwareFilename);
-        File firmwareFile = firmwarePath.toFile();
-
-        if (!firmwareFile.exists()) {
+        if (!firmwarePath.toFile().exists()) {
             log.error("Firmware file not found at: {}", firmwarePath.toAbsolutePath());
             throw new RuntimeException("Firmware file not found");
         }
 
         log.info("Serving firmware file: {} (size: {} bytes)",
-                 firmwarePath.toAbsolutePath(), firmwareFile.length());
-        return new FileSystemResource(firmwareFile);
+                 firmwarePath.toAbsolutePath(), firmwarePath.toFile().length());
+        return new FileSystemResource(firmwarePath.toFile());
     }
 
     /**
-     * Downloads the latest firmware from GitHub release
-     * @param version The version to download
+     * Downloads the latest firmware from GitHub release with retry on transient failures.
+     *
+     * @param version the version to download
      * @return true if download successful
      */
     public boolean downloadLatestFirmware(String version) {
@@ -158,7 +182,6 @@ public class FirmwareService {
 
             log.info("Attempting to download firmware version {} from GitHub repo: {}", version, githubRepo);
 
-            // Get release assets
             String[] repoParts = githubRepo.split("/");
             GitHubReleaseDto release = apiWebClient.get()
                     .uri(uriBuilder -> uriBuilder
@@ -176,17 +199,13 @@ public class FirmwareService {
                 }
 
                 for (GitHubAssetDto asset : release.getAssets()) {
-                    String name = asset.getName();
-                    // Look for .bin file
-                    if (name.endsWith(".bin")) {
-                        String downloadUrl = asset.getBrowserDownloadUrl();
-                        log.info("Found firmware binary: {} ({} bytes)", name, asset.getSize());
-                        downloadSuccessful = downloadFirmwareFromUrl(downloadUrl, version);
+                    if (asset.getName().endsWith(".bin")) {
+                        log.info("Found firmware binary: {} ({} bytes)", asset.getName(), asset.getSize());
+                        downloadSuccessful = downloadFirmwareFromUrl(asset.getBrowserDownloadUrl(), version);
                         return downloadSuccessful;
                     }
                 }
 
-                // Log available assets for troubleshooting
                 String availableFiles = release.getAssets().stream()
                         .map(GitHubAssetDto::getName)
                         .reduce((a, b) -> a + ", " + b)
@@ -210,57 +229,10 @@ public class FirmwareService {
         }
     }
 
-    private boolean downloadFirmwareFromUrl(String url, String version) {
-        try {
-            log.info("Downloading firmware from URL: {}", url);
-
-            byte[] firmwareData = downloadWebClient.get()
-                    .uri(url)
-                    .retrieve()
-                    .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
-                             clientResponse -> {
-                                 log.error("Failed to download firmware: HTTP {}", clientResponse.statusCode());
-                                 return clientResponse.createException();
-                             })
-                    .bodyToMono(byte[].class)
-                    .timeout(Duration.ofSeconds(60))
-                    .doOnError(error -> log.error("Error during firmware download: {}", error.getMessage()))
-                    .block();
-
-            if (firmwareData != null && firmwareData.length > 0) {
-                log.info("Downloaded {} bytes from GitHub", firmwareData.length);
-
-                // Ensure directory exists
-                Path storagePath = Paths.get(firmwareStoragePath);
-                Files.createDirectories(storagePath);
-
-                // Save firmware file
-                Path firmwarePath = storagePath.resolve(firmwareFilename);
-                try (FileOutputStream fos = new FileOutputStream(firmwarePath.toFile())) {
-                    fos.write(firmwareData);
-                }
-
-                log.info("Firmware downloaded successfully: {} bytes written to {}",
-                         firmwareData.length, firmwarePath.toAbsolutePath());
-                cachedFirmwareVersion = version;
-                log.info("Cached firmware version updated to: {}", cachedFirmwareVersion);
-                return true;
-            } else {
-                log.error("Downloaded firmware data is null or empty");
-            }
-
-        } catch (IOException e) {
-            log.error("Failed to save firmware file: {}", e.getMessage(), e);
-        } catch (Exception e) {
-            log.error("Unexpected error downloading firmware: {} - {}",
-                     e.getClass().getSimpleName(), e.getMessage(), e);
-        }
-
-        return false;
-    }
-
     /**
-     * Check if a firmware file is missing locally
+     * Checks if the firmware file is missing locally.
+     *
+     * @return true if the firmware file does not exist on disk
      */
     public boolean isFirmwareMissing() {
         Path firmwarePath = Paths.get(firmwareStoragePath, firmwareFilename);
@@ -270,9 +242,10 @@ public class FirmwareService {
     }
 
     /**
-     * Check if the cached firmware file matches the latest version
-     * @param latestVersion The latest version from GitHub
-     * @return true if cached firmware matches latest version
+     * Checks whether the locally cached firmware matches the given version.
+     *
+     * @param latestVersion the version to compare against
+     * @return true if the cached firmware matches latestVersion
      */
     public boolean isFirmwareUpToDate(String latestVersion) {
         if (isFirmwareMissing()) {
@@ -292,19 +265,74 @@ public class FirmwareService {
     }
 
     /**
-     * Delete the old firmware file when a new version is available
+     * Deletes the locally cached firmware file. Silently ignores the case where the file
+     * is already absent (e.g. deleted by a concurrent request).
      */
     public void deleteOldFirmware() {
         try {
             Path firmwarePath = Paths.get(firmwareStoragePath, firmwareFilename);
-            if (Files.exists(firmwarePath)) {
-                Files.delete(firmwarePath);
+            boolean deleted = Files.deleteIfExists(firmwarePath);
+            if (deleted) {
                 log.info("Deleted old firmware file: {}", firmwarePath.toAbsolutePath());
-                cachedFirmwareVersion = null;
+            } else {
+                log.debug("Firmware file was already absent, nothing to delete");
             }
+            cachedFirmwareVersion = null;
         } catch (IOException e) {
             log.error("Failed to delete old firmware file: {}", e.getMessage(), e);
         }
+    }
+
+    private boolean downloadFirmwareFromUrl(String url, String version) {
+        try {
+            log.info("Downloading firmware from URL: {}", url);
+
+            byte[] firmwareData = downloadWebClient.get()
+                    .uri(url)
+                    .retrieve()
+                    .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
+                             clientResponse -> {
+                                 log.error("Failed to download firmware: HTTP {}", clientResponse.statusCode());
+                                 return clientResponse.createException();
+                             })
+                    .bodyToMono(byte[].class)
+                    .timeout(Duration.ofSeconds(60))
+                    .retryWhen(Retry.backoff(3, Duration.ofSeconds(2))
+                            .maxBackoff(Duration.ofSeconds(10))
+                            .doBeforeRetry(signal -> log.warn("Retrying firmware download (attempt {}): {}",
+                                    signal.totalRetries() + 1, signal.failure().getMessage())))
+                    .doOnError(error -> log.error("Error during firmware download: {}", error.getMessage()))
+                    .block();
+
+            if (firmwareData != null && firmwareData.length > 0) {
+                log.info("Downloaded {} bytes from GitHub", firmwareData.length);
+
+                Path storagePath = Paths.get(firmwareStoragePath);
+                Files.createDirectories(storagePath);
+
+                // Write to a temp file first, then rename atomically to avoid partial reads
+                Path tempPath = storagePath.resolve(firmwareFilename + ".tmp");
+                Path finalPath = storagePath.resolve(firmwareFilename);
+                Files.write(tempPath, firmwareData);
+                Files.move(tempPath, finalPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+
+                log.info("Firmware downloaded successfully: {} bytes written to {}",
+                         firmwareData.length, finalPath.toAbsolutePath());
+                cachedFirmwareVersion = version;
+                log.info("Cached firmware version updated to: {}", cachedFirmwareVersion);
+                return true;
+            } else {
+                log.error("Downloaded firmware data is null or empty");
+            }
+
+        } catch (IOException e) {
+            log.error("Failed to save firmware file: {}", e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("Unexpected error downloading firmware: {} - {}",
+                     e.getClass().getSimpleName(), e.getMessage(), e);
+        }
+
+        return false;
     }
 
     private void recordFirmwareDownload(boolean successful, Timer.Sample sample) {

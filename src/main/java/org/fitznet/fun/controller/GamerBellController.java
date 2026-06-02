@@ -125,28 +125,19 @@ public class GamerBellController {
                     currentVersion != null ? currentVersion : "unknown",
                     latestVersion);
 
-            // Check if cached firmware file matches the latest version
-            if (!firmwareService.isFirmwareUpToDate(latestVersion)) {
-                log.info("Cached firmware outdated - deleting and downloading version={}", latestVersion);
-                firmwareService.deleteOldFirmware();
-            }
-
-            // Check if firmware file exists
-            if (firmwareService.isFirmwareMissing()) {
-                log.warn("Firmware file missing locally - attempting GitHub download for version={}", latestVersion);
-                boolean downloaded = firmwareService.downloadLatestFirmware(latestVersion);
-                if (!downloaded) {
-                    long duration = System.currentTimeMillis() - startTime;
-                    checkOutcome = "download_failed";
-                    log.error("Firmware download failed - version={}, deviceMac={}, responseTimeMs={}",
-                            latestVersion,
-                            deviceMac != null ? deviceMac : "unknown",
-                            duration);
-                    log.error("Manual action required: Create GitHub release at https://github.com/mattlol85/Esp32FitznetBell/releases with tag '{}' and upload .bin file", latestVersion);
-                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                            .header("X-Firmware-Error", "No firmware available. Create GitHub release or add local firmware.bin")
-                            .build();
-                }
+            // Ensure firmware is cached locally — thread-safe: only one download per version executes at a time
+            boolean firmwareReady = firmwareService.ensureFirmwareReady(latestVersion);
+            if (!firmwareReady) {
+                long duration = System.currentTimeMillis() - startTime;
+                checkOutcome = "download_failed";
+                log.error("Firmware download failed - version={}, deviceMac={}, responseTimeMs={}",
+                        latestVersion,
+                        deviceMac != null ? deviceMac : "unknown",
+                        duration);
+                log.error("Manual action required: Create GitHub release at https://github.com/mattlol85/Esp32FitznetBell/releases with tag '{}' and upload .bin file", latestVersion);
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                        .header("X-Firmware-Error", "No firmware available. Create GitHub release or add local firmware.bin")
+                        .build();
             }
 
             try {

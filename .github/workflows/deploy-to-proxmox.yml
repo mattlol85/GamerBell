@@ -36,7 +36,7 @@ jobs:
           echo "tag-no-v=$TAG_NO_V" >> "$GITHUB_OUTPUT"
 
       - name: 🔑 Start ssh-agent and add private key
-        uses: webfactory/ssh-agent@v0.5.4
+        uses: webfactory/ssh-agent@v0.9.1
         with:
           ssh-private-key: ${{ secrets.PROXMOX_SSH_PRIVATE_KEY }}
 

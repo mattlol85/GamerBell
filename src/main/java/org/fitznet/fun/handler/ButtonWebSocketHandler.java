@@ -1,6 +1,8 @@
 package org.fitznet.fun.handler;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import java.io.EOFException;
+import java.io.IOException;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.fitznet.fun.dto.ButtonEventDto;
@@ -166,6 +168,9 @@ public class ButtonWebSocketHandler extends TextWebSocketHandler {
 
     /**
      * Handles transport errors on the WebSocket connection.
+     * Abrupt client disconnects (EOF, connection reset, broken pipe) are routine for
+     * ESP32 devices and browsers dropping off the network, so they are logged as a
+     * single INFO line; anything else keeps the full ERROR + stack trace.
      *
      * @param session   the WebSocket session
      * @param exception the transport exception
@@ -174,17 +179,48 @@ public class ButtonWebSocketHandler extends TextWebSocketHandler {
     public void handleTransportError(@NonNull WebSocketSession session, @NonNull Throwable exception) {
         try {
             setupSessionMDC(session);
-            meterRegistry.counter("gamerbell.websocket.errors.total", "type", "transport").increment();
+            meterRegistry.counter("gamerbell.websocket.errors.total",
+                    "type", "transport",
+                    "exception", exception.getClass().getSimpleName()).increment();
 
-            log.error("WebSocket transport error - sessionId={}, error={}, errorType={}",
-                    getSessionId(session),
-                    exception.getMessage(),
-                    exception.getClass().getSimpleName(),
-                    exception);
+            if (isExpectedDisconnect(exception)) {
+                log.info("WebSocket client disconnected abruptly - sessionId={}, errorType={}, error={}",
+                        getSessionId(session),
+                        exception.getClass().getSimpleName(),
+                        exception.getMessage());
+            } else {
+                log.error("WebSocket transport error - sessionId={}, error={}, errorType={}",
+                        getSessionId(session),
+                        exception.getMessage(),
+                        exception.getClass().getSimpleName(),
+                        exception);
+            }
 
         } finally {
             clearSessionMDC();
         }
+    }
+
+    /**
+     * Determines whether a transport error represents a routine abrupt client
+     * disconnect rather than a genuine server-side problem.
+     *
+     * @param exception the transport exception (cause chain is walked)
+     * @return true for EOF / connection reset / broken pipe style disconnects
+     */
+    private boolean isExpectedDisconnect(Throwable exception) {
+        for (Throwable t = exception; t != null; t = t.getCause() == t ? null : t.getCause()) {
+            if (t instanceof EOFException) {
+                return true;
+            }
+            if (t instanceof IOException && t.getMessage() != null) {
+                String message = t.getMessage().toLowerCase();
+                if (message.contains("connection reset") || message.contains("broken pipe")) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**

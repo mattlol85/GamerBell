@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.io.FileSystemResource;
@@ -27,6 +28,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -110,6 +112,33 @@ class GamerBellControllerTest {
                 .tag("outcome", "update_served")
                 .counter()
                 .count());
+    }
+
+    @Test
+    void shouldAcceptDeviceLogAndReturnNoContent() throws Exception {
+        String body = "{\"deviceId\":\"bell-1\",\"firmwareVersion\":\"v0.14.1\","
+                + "\"level\":\"ERROR\",\"source\":\"count_fetch\",\"message\":\"HTTP 503\"}";
+
+        mockMvc.perform(post("/api/devices/log")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isNoContent());
+
+        assertEquals(1.0, meterRegistry.get("gamerbell.device.logs.total")
+                .tag("level", "ERROR")
+                .tag("source", "count_fetch")
+                .counter()
+                .count());
+    }
+
+    @Test
+    void shouldRejectDeviceLogMissingRequiredFields() throws Exception {
+        String body = "{\"firmwareVersion\":\"v0.14.1\"}";
+
+        mockMvc.perform(post("/api/devices/log")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
     }
 
     private Path createFirmwareFile(Path path) throws IOException {

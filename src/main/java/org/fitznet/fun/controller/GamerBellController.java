@@ -5,6 +5,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.fitznet.fun.dto.BellCountDto;
+import org.fitznet.fun.dto.DeviceLogDto;
 import org.fitznet.fun.service.ButtonService;
 import org.fitznet.fun.service.FirmwareService;
 import org.fitznet.fun.utils.JsonUtils;
@@ -14,6 +15,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -32,6 +35,8 @@ public class GamerBellController {
 
     private static final String MDC_DEVICE_MAC = "deviceMac";
     private static final String MDC_DEVICE_VERSION = "deviceVersion";
+    private static final String MDC_DEVICE_ID = "deviceId";
+    private static final String MDC_LOG_SOURCE = "logSource";
 
     final ButtonService buttonService;
 
@@ -180,6 +185,55 @@ public class GamerBellController {
             MDC.remove(MDC_DEVICE_MAC);
             MDC.remove(MDC_DEVICE_VERSION);
             recordFirmwareCheck(checkOutcome, firmwareCheckSample);
+        }
+    }
+
+    /**
+     * Accepts an error/log report from an ESP32 device and emits it as a structured
+     * log line for Loki, so device-side failures can be investigated remotely.
+     *
+     * @param deviceLogDto the device log payload
+     * @return 204 No Content on success, 400 if required fields are missing
+     */
+    @PostMapping("/api/devices/log")
+    public ResponseEntity<Void> logDeviceError(@RequestBody DeviceLogDto deviceLogDto) {
+        if (deviceLogDto == null
+                || deviceLogDto.getDeviceId() == null || deviceLogDto.getDeviceId().isBlank()
+                || deviceLogDto.getMessage() == null || deviceLogDto.getMessage().isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        String level = deviceLogDto.getLevel() != null ? deviceLogDto.getLevel().name() : "ERROR";
+        String source = deviceLogDto.getSource() != null ? deviceLogDto.getSource() : "unknown";
+
+        try {
+            MDC.put(MDC_DEVICE_ID, deviceLogDto.getDeviceId());
+            MDC.put(MDC_DEVICE_VERSION, deviceLogDto.getFirmwareVersion());
+            MDC.put(MDC_LOG_SOURCE, source);
+
+            String logMessage = "Device log received - deviceId={}, firmwareVersion={}, source={}, message={}";
+            Object[] args = {
+                    deviceLogDto.getDeviceId(),
+                    deviceLogDto.getFirmwareVersion(),
+                    source,
+                    deviceLogDto.getMessage()
+            };
+
+            if ("ERROR".equals(level)) {
+                log.error(logMessage, args);
+            } else if ("WARN".equals(level)) {
+                log.warn(logMessage, args);
+            } else {
+                log.info(logMessage, args);
+            }
+
+            meterRegistry.counter("gamerbell.device.logs.total", "level", level, "source", source).increment();
+
+            return ResponseEntity.noContent().build();
+        } finally {
+            MDC.remove(MDC_DEVICE_ID);
+            MDC.remove(MDC_DEVICE_VERSION);
+            MDC.remove(MDC_LOG_SOURCE);
         }
     }
 

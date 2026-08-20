@@ -44,7 +44,7 @@ src/main/java/org/fitznet/fun/
 │   ├── LoggingFilter.java             <- Structured HTTP request logging
 │   └── WebSocketConfig.java           <- Registers /ws endpoint; reads cors.allowed-origins
 ├── controller/
-│   └── GamerBellController.java       <- GET /count, GET /api/firmware/latest
+│   └── GamerBellController.java       <- GET /count, GET /api/firmware/latest, POST /api/devices/log
 ├── dto/
 │   ├── ButtonEvent.java               <- Enum: PRESSED, RELEASED
 │   ├── ButtonEventDto.java            <- WS message payload: deviceId, buttonEvent, firmwareVersion
@@ -103,6 +103,29 @@ OTA update endpoint for ESP32 devices.
 - `200 OK` + binary `.bin` stream + `X-Latest-Version` header — update available, serving firmware
 - `304 Not Modified` — device is already on the latest version
 - `503 Service Unavailable` + `X-Firmware-Error` header — no firmware available
+
+#### `POST /api/devices/log`
+Accepts an error/log report from an ESP32 device and emits it as a structured log line (JSON, via Logstash Logback Encoder) for Loki, so device-side failures can be investigated remotely. No persistence — this is log-only, matching GamerBell's stateless design.
+
+**Body:**
+```json
+{
+  "deviceId": "bell-1",
+  "firmwareVersion": "v0.14.1",
+  "level": "ERROR",
+  "source": "count_fetch",
+  "message": "HTTP 503"
+}
+```
+`level` is one of `ERROR` | `WARN` | `INFO` (defaults to `ERROR` if omitted); `source` identifies the failure point (e.g. `count_fetch`, `websocket`, `ota`, `wifi`).
+
+**Responses:**
+- `204 No Content` — logged successfully
+- `400 Bad Request` — missing `deviceId`/`message`, or any field over 200 characters
+
+Since this endpoint is unauthenticated, the `source` value is only used verbatim in the log line/MDC — for the Micrometer counter tag it's collapsed to `other` unless it's one of the known values above, so an arbitrary caller can't create unbounded Prometheus time series.
+
+Also increments `gamerbell.device.logs.total{level,source}` (Micrometer/Prometheus).
 
 ---
 

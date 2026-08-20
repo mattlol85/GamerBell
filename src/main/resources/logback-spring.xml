@@ -21,6 +21,8 @@
             <includeMdcKeyName>sessionId</includeMdcKeyName>
             <includeMdcKeyName>deviceId</includeMdcKeyName>
             <includeMdcKeyName>deviceMac</includeMdcKeyName>
+            <includeMdcKeyName>deviceVersion</includeMdcKeyName>
+            <includeMdcKeyName>logSource</includeMdcKeyName>
             <includeMdcKeyName>userId</includeMdcKeyName>
 
             <!-- Include caller info for debugging -->

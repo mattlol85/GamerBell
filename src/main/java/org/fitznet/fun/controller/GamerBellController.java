@@ -20,6 +20,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Set;
+
 import static org.fitznet.fun.utils.Constants.ESP32_ERROR_HEADER;
 import static org.fitznet.fun.utils.Constants.ESP32_MAC_ADDRESS_HEADER;
 import static org.fitznet.fun.utils.Constants.ESP32_VERSION_HEADER;
@@ -37,6 +39,12 @@ public class GamerBellController {
     private static final String MDC_DEVICE_VERSION = "deviceVersion";
     private static final String MDC_DEVICE_ID = "deviceId";
     private static final String MDC_LOG_SOURCE = "logSource";
+
+    // Known failure points the firmware reports from; anything else is tagged
+    // "other" for metrics so an unauthenticated caller can't create unbounded
+    // Prometheus time series by supplying arbitrary "source" values.
+    private static final Set<String> KNOWN_LOG_SOURCES = Set.of("count_fetch", "websocket", "ota", "wifi");
+    private static final int MAX_DEVICE_LOG_FIELD_LENGTH = 200;
 
     final ButtonService buttonService;
 
@@ -199,12 +207,17 @@ public class GamerBellController {
     public ResponseEntity<Void> logDeviceError(@RequestBody DeviceLogDto deviceLogDto) {
         if (deviceLogDto == null
                 || deviceLogDto.getDeviceId() == null || deviceLogDto.getDeviceId().isBlank()
-                || deviceLogDto.getMessage() == null || deviceLogDto.getMessage().isBlank()) {
+                || deviceLogDto.getMessage() == null || deviceLogDto.getMessage().isBlank()
+                || isTooLong(deviceLogDto.getDeviceId())
+                || isTooLong(deviceLogDto.getFirmwareVersion())
+                || isTooLong(deviceLogDto.getSource())
+                || isTooLong(deviceLogDto.getMessage())) {
             return ResponseEntity.badRequest().build();
         }
 
         String level = deviceLogDto.getLevel() != null ? deviceLogDto.getLevel().name() : "ERROR";
         String source = deviceLogDto.getSource() != null ? deviceLogDto.getSource() : "unknown";
+        String metricSource = KNOWN_LOG_SOURCES.contains(source) ? source : "other";
 
         try {
             MDC.put(MDC_DEVICE_ID, deviceLogDto.getDeviceId());
@@ -227,7 +240,7 @@ public class GamerBellController {
                 log.info(logMessage, args);
             }
 
-            meterRegistry.counter("gamerbell.device.logs.total", "level", level, "source", source).increment();
+            meterRegistry.counter("gamerbell.device.logs.total", "level", level, "source", metricSource).increment();
 
             return ResponseEntity.noContent().build();
         } finally {
@@ -235,6 +248,10 @@ public class GamerBellController {
             MDC.remove(MDC_DEVICE_VERSION);
             MDC.remove(MDC_LOG_SOURCE);
         }
+    }
+
+    private boolean isTooLong(String value) {
+        return value != null && value.length() > MAX_DEVICE_LOG_FIELD_LENGTH;
     }
 
     private void recordFirmwareCheck(String outcome, Timer.Sample sample) {

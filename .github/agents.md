@@ -117,11 +117,13 @@ Accepts an error/log report from an ESP32 device and emits it as a structured lo
   "message": "HTTP 503"
 }
 ```
-`level` is one of `ERROR` | `WARN` | `INFO` (defaults to `ERROR` if omitted); `source` identifies the failure point (e.g. `count_fetch`, `websocket`, `ota`).
+`level` is one of `ERROR` | `WARN` | `INFO` (defaults to `ERROR` if omitted); `source` identifies the failure point (e.g. `count_fetch`, `websocket`, `ota`, `wifi`).
 
 **Responses:**
 - `204 No Content` — logged successfully
-- `400 Bad Request` — missing `deviceId` or `message`
+- `400 Bad Request` — missing `deviceId`/`message`, or any field over 200 characters
+
+Since this endpoint is unauthenticated, the `source` value is only used verbatim in the log line/MDC — for the Micrometer counter tag it's collapsed to `other` unless it's one of the known values above, so an arbitrary caller can't create unbounded Prometheus time series.
 
 Also increments `gamerbell.device.logs.total{level,source}` (Micrometer/Prometheus).
 

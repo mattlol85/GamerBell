@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+// gRPC equivalents of GamerBellController. No auth, same as REST.
+package fitznet.gamerbell.v1;
+
+option java_multiple_files = true;
+option java_package = "org.fitznet.fun.grpc.proto";
+
+service GamerBellService {
+  // GET /count - number of connected bell WebSocket sessions
+  rpc GetCount(GetCountRequest) returns (GetCountResponse);
+  // GET /api/firmware/latest. Streams one FirmwareInfo, then (unless up_to_date) the .bin in data
+  // chunks. "No firmware available" (REST 503) is UNAVAILABLE; serve failures (REST 500) are INTERNAL.
+  rpc GetLatestFirmware(GetLatestFirmwareRequest) returns (stream FirmwareChunk);
+  // POST /api/devices/log
+  rpc LogDevice(DeviceLogRequest) returns (DeviceLogResponse);
+}
+
+message GetCountRequest {}
+
+message GetCountResponse {
+  int64 count = 1;
+}
+
+message GetLatestFirmwareRequest {
+  // x-ESP32-version header
+  optional string current_version = 1;
+  // x-ESP32-MAC header
+  optional string device_mac = 2;
+}
+
+message FirmwareChunk {
+  oneof part {
+    FirmwareInfo info = 1;
+    bytes data = 2;
+  }
+}
+
+message FirmwareInfo {
+  // true is the REST 304: no data chunks follow
+  bool up_to_date = 1;
+  // x-Latest-Version header; empty when up_to_date
+  string latest_version = 2;
+  int64 size_bytes = 3;
+}
+
+enum DeviceLogLevel {
+  DEVICE_LOG_LEVEL_UNSPECIFIED = 0;
+  DEVICE_LOG_LEVEL_ERROR = 1;
+  DEVICE_LOG_LEVEL_WARN = 2;
+  DEVICE_LOG_LEVEL_INFO = 3;
+}
+
+message DeviceLogRequest {
+  string device_id = 1;
+  optional string firmware_version = 2;
+  // unspecified is treated as ERROR, like a missing JSON level
+  DeviceLogLevel level = 3;
+  optional string source = 4;
+  string message = 5;
+}
+
+message DeviceLogResponse {}

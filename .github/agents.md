@@ -210,3 +210,13 @@ chore/short-description
 6. **Javadoc** — All public methods and classes must have Javadoc comments (enforced by `.github/copilot-instructions.md`).
 7. **No wildcard imports** — use single explicit imports only.
 8. **No nested classes** — create a separate file for each class; name packages wisely.
+
+---
+
+## gRPC (always alongside REST)
+
+Every REST endpoint has an equivalent RPC in `src/main/proto/fitznet/gamerbell/v1/gamerbell.proto`,
+implemented by `GamerBellGrpcService`, which delegates to `GamerBellController` so OTA metrics and MDC
+logging are shared. When you add or change a REST endpoint, in the same PR add/adjust the RPC, the service
+method, a test in `GamerBellGrpcServiceTest`, and the map in `docs/grpc.md` (Fitz-Net hub repo). The WebSocket
+bell channel is exempt.

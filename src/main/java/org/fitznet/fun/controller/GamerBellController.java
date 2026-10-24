@@ -1,6 +1,5 @@
 package org.fitznet.fun.controller;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
@@ -71,10 +70,9 @@ public class GamerBellController {
      * Returns the current count of active WebSocket sessions.
      *
      * @return JSON string containing the session count
-     * @throws JsonProcessingException if serialization fails
      */
     @GetMapping(value = "/count", produces = MediaType.APPLICATION_JSON_VALUE)
-    public String getCount() throws JsonProcessingException {
+    public String getCount() {
         long startTime = System.currentTimeMillis();
 
         long sessionCount = buttonService.getSessionCount();

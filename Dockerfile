@@ -18,7 +18,7 @@ RUN ./gradlew bootJar -x test --no-daemon --parallel --build-cache
 RUN mkdir -p build/dependency && \
     cd build/dependency && \
     JAR_FILE=$(ls ../libs/*.jar | grep -v plain | head -1) && \
-    java -Djarmode=layertools -jar $JAR_FILE extract
+    java -Djarmode=tools -jar $JAR_FILE extract --layers --launcher --destination .
 
 # Stage 2: Runtime image
 FROM eclipse-temurin:21-jre-jammy

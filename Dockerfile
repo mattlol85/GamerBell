@@ -49,8 +49,8 @@ RUN mkdir -p /app/firmware && chown -R spring:spring /app
 # Switch to non-root user
 USER spring:spring
 
-# Expose application port
-EXPOSE 8080
+# Expose application ports (8080 HTTP, 9090 gRPC)
+EXPOSE 8080 9090
 
 # Health check using Spring Boot Actuator
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \

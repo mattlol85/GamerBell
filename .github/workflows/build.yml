@@ -185,6 +185,9 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add build.gradle
           git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
+          # The build can leave generated files modified. They are not part of the bump,
+          # and an unstaged change makes the rebase below refuse to run, so drop them first.
+          git reset --hard -q HEAD
           # Incorporate any commits that landed on the branch since checkout so the
           # push fast-forwards instead of being rejected as non-fast-forward.
           git pull --rebase origin ${{ github.ref_name }} || { echo "ERROR: Rebase failed due to conflicts. Aborting." >&2; git rebase --abort; exit 1; }

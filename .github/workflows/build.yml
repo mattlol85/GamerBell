@@ -184,7 +184,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add build.gradle
+          # gradlew.bat is stored with CRLF in the index, but .gitattributes (*.bat text eol=crlf)
+          # expects LF there, so it shows as modified on every fresh checkout and `git reset --hard`
+          # cannot clear it. That blocks `git pull --rebase`. Re-normalize it into the bump commit.
+          git add --renormalize gradlew.bat
           git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
+          echo "Working tree before pull:"; git status --porcelain
           # The build can leave generated files modified. They are not part of the bump,
           # and an unstaged change makes the rebase below refuse to run, so drop them first.
           git reset --hard -q HEAD

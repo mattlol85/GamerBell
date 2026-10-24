@@ -26,7 +26,7 @@ GitHub Releases ◄── FirmwareService ◄── GET /api/firmware/latest ◄
 | Item | Value |
 |---|---|
 | Language | Java 21 |
-| Framework | Spring Boot 3.4.1 |
+| Framework | Spring Boot 4.1.2 |
 | Build tool | Gradle |
 | Key modules | Spring WebSocket, Spring WebFlux, Spring Actuator, Lombok |
 | Logging | Logstash Logback Encoder (JSON for Loki) |

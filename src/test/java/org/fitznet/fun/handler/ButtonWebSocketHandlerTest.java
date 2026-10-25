@@ -22,6 +22,7 @@ import static org.fitznet.fun.utils.JsonUtils.OBJECT_MAPPER;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -49,6 +50,20 @@ class ButtonWebSocketHandlerTest {
     @AfterEach
     void tearDown() {
         ((Logger) LoggerFactory.getLogger(ButtonWebSocketHandler.class)).detachAppender(logAppender);
+    }
+
+    @Test
+    void shouldLogUnderHandshakeCorrelationId() {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.getId()).thenReturn("session-1");
+        when(session.getUri()).thenReturn(java.net.URI.create("ws://localhost/ws?correlationId=web-9f8e"));
+        when(session.getAttributes()).thenReturn(new java.util.HashMap<>());
+
+        handler.afterConnectionEstablished(session);
+
+        assertTrue(logAppender.list.stream()
+                .anyMatch(e -> "web-9f8e".equals(e.getMDCPropertyMap().get("correlationId"))
+                        && "websocket".equals(e.getMDCPropertyMap().get("transport"))));
     }
 
     @Test

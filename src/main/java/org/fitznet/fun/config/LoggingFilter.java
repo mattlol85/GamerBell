@@ -8,13 +8,13 @@ import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.fitznet.fun.tracing.TraceContext;
 import org.slf4j.MDC;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.util.UUID;
 
 /**
  * Servlet filter that adds MDC (Mapped Diagnostic Context) fields for request tracing.
@@ -25,8 +25,8 @@ import java.util.UUID;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class LoggingFilter implements Filter {
 
-    private static final String REQUEST_ID_HEADER = "X-Request-ID";
-    private static final String CORRELATION_ID_HEADER = "X-Correlation-ID";
+    private static final String REQUEST_ID_HEADER = TraceContext.REQUEST_ID_HEADER;
+    private static final String CORRELATION_ID_HEADER = TraceContext.CORRELATION_ID_HEADER;
 
     private static final String MDC_REQUEST_ID = "requestId";
     private static final String MDC_CORRELATION_ID = "correlationId";
@@ -54,7 +54,7 @@ public class LoggingFilter implements Filter {
         long startTime = System.currentTimeMillis();
 
         try {
-            setupMDC(httpRequest);
+            setupMDC(httpRequest, httpResponse);
 
             log.debug("Incoming request: {} {} from {}",
                     httpRequest.getMethod(),
@@ -79,22 +79,20 @@ public class LoggingFilter implements Filter {
     /**
      * Sets up MDC context with request-specific fields.
      *
-     * @param request the HTTP servlet request
+     * @param request  the HTTP servlet request
+     * @param response the HTTP servlet response, which echoes the ids back to the caller
      */
-    private void setupMDC(HttpServletRequest request) {
-        // Generate or extract request ID
-        String requestId = request.getHeader(REQUEST_ID_HEADER);
-        if (requestId == null || requestId.isBlank()) {
-            requestId = generateShortUUID();
-        }
+    private void setupMDC(HttpServletRequest request, HttpServletResponse response) {
+        // Generate or extract request ID (malformed inbound ids are replaced, never logged)
+        String requestId = TraceContext.idOrNew(request.getHeader(REQUEST_ID_HEADER));
         MDC.put(MDC_REQUEST_ID, requestId);
 
         // Extract or generate correlation ID for distributed tracing
-        String correlationId = request.getHeader(CORRELATION_ID_HEADER);
-        if (correlationId == null || correlationId.isBlank()) {
-            correlationId = requestId;
-        }
+        String correlationId = TraceContext.idOrDefault(request.getHeader(CORRELATION_ID_HEADER), requestId);
         MDC.put(MDC_CORRELATION_ID, correlationId);
+        MDC.put(TraceContext.MDC_TRANSPORT, "http");
+        response.setHeader(REQUEST_ID_HEADER, requestId);
+        response.setHeader(CORRELATION_ID_HEADER, correlationId);
 
         // Add request details
         MDC.put(MDC_CLIENT_IP, getClientIp(request));
@@ -117,6 +115,7 @@ public class LoggingFilter implements Filter {
         MDC.remove(MDC_REQUEST_PATH);
         MDC.remove(MDC_REQUEST_METHOD);
         MDC.remove(MDC_USER_AGENT);
+        MDC.remove(TraceContext.MDC_TRANSPORT);
     }
 
     /**
@@ -138,15 +137,6 @@ public class LoggingFilter implements Filter {
         }
 
         return request.getRemoteAddr();
-    }
-
-    /**
-     * Generates a short UUID for request identification.
-     *
-     * @return a shortened UUID string
-     */
-    private String generateShortUUID() {
-        return UUID.randomUUID().toString().substring(0, 8);
     }
 
     /**

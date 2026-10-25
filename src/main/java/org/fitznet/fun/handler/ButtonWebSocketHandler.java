@@ -3,10 +3,12 @@ package org.fitznet.fun.handler;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.EOFException;
 import java.io.IOException;
+import java.util.Map;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.fitznet.fun.dto.ButtonEventDto;
 import org.fitznet.fun.service.ButtonService;
+import org.fitznet.fun.tracing.TraceContext;
 import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -230,6 +232,10 @@ public class ButtonWebSocketHandler extends TextWebSocketHandler {
      */
     private void setupSessionMDC(WebSocketSession session) {
         MDC.put(MDC_SESSION_ID, getSessionId(session));
+        String correlationId = resolveCorrelationId(session);
+        MDC.put(TraceContext.MDC_CORRELATION_ID, correlationId);
+        MDC.put(TraceContext.MDC_REQUEST_ID, correlationId);
+        MDC.put(TraceContext.MDC_TRANSPORT, "websocket");
         if (session.getRemoteAddress() != null) {
             MDC.put(MDC_CLIENT_IP, session.getRemoteAddress().toString());
         }
@@ -242,6 +248,38 @@ public class ButtonWebSocketHandler extends TextWebSocketHandler {
         MDC.remove(MDC_SESSION_ID);
         MDC.remove(MDC_DEVICE_ID);
         MDC.remove(MDC_CLIENT_IP);
+        TraceContext.clear();
+    }
+
+    /**
+     * Resolves the connection's correlation id once and caches it on the session so every frame
+     * logs under the id the client sent at handshake time: the {@code X-Correlation-ID} header
+     * (devices) or the {@code correlationId} query parameter (browsers cannot set WebSocket
+     * headers). Falls back to the session id when the client sent neither.
+     *
+     * @param session the WebSocket session
+     * @return the correlation id for this connection
+     */
+    private String resolveCorrelationId(WebSocketSession session) {
+        Map<String, Object> attributes = session.getAttributes();
+        if (attributes != null && attributes.get(TraceContext.MDC_CORRELATION_ID) instanceof String id) {
+            return id;
+        }
+        String inbound = session.getHandshakeHeaders() != null
+                ? session.getHandshakeHeaders().getFirst(TraceContext.CORRELATION_ID_HEADER)
+                : null;
+        if (inbound == null && session.getUri() != null && session.getUri().getQuery() != null) {
+            for (String pair : session.getUri().getQuery().split("&")) {
+                if (pair.startsWith("correlationId=")) {
+                    inbound = pair.substring("correlationId=".length());
+                }
+            }
+        }
+        String id = TraceContext.idOrDefault(inbound, getSessionId(session));
+        if (attributes != null) {
+            attributes.put(TraceContext.MDC_CORRELATION_ID, id);
+        }
+        return id;
     }
 
     /**

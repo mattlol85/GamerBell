@@ -2,8 +2,10 @@ package org.fitznet.fun.grpc;
 
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+import io.grpc.Metadata;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
+import io.grpc.stub.MetadataUtils;
 import org.fitznet.fun.grpc.proto.DeviceLogLevel;
 import org.fitznet.fun.grpc.proto.DeviceLogRequest;
 import org.fitznet.fun.grpc.proto.FirmwareChunk;
@@ -22,6 +24,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -60,6 +63,28 @@ class GamerBellGrpcServiceTest {
                         .build())
                 .forEachRemaining(chunks::add);
         return chunks;
+    }
+
+    @Test
+    void correlationId_isEchoedInResponseHeaders() {
+        Metadata.Key<String> key = Metadata.Key.of("x-correlation-id", Metadata.ASCII_STRING_MARSHALLER);
+        Metadata sent = new Metadata();
+        sent.put(key, "trace-abc-123");
+        AtomicReference<Metadata> received = new AtomicReference<>();
+        stub.withInterceptors(
+                        MetadataUtils.newAttachHeadersInterceptor(sent),
+                        MetadataUtils.newCaptureMetadataInterceptor(received, new AtomicReference<>()))
+                .getCount(GetCountRequest.getDefaultInstance());
+        assertEquals("trace-abc-123", received.get().get(key));
+    }
+
+    @Test
+    void correlationId_isGeneratedWhenMissing() {
+        Metadata.Key<String> key = Metadata.Key.of("x-correlation-id", Metadata.ASCII_STRING_MARSHALLER);
+        AtomicReference<Metadata> received = new AtomicReference<>();
+        stub.withInterceptors(MetadataUtils.newCaptureMetadataInterceptor(received, new AtomicReference<>()))
+                .getCount(GetCountRequest.getDefaultInstance());
+        assertEquals(8, received.get().get(key).length());
     }
 
     @Test

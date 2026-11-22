@@ -23,6 +23,7 @@ import java.util.Set;
 
 import static org.fitznet.fun.utils.Constants.ESP32_ERROR_HEADER;
 import static org.fitznet.fun.utils.Constants.ESP32_MAC_ADDRESS_HEADER;
+import static org.fitznet.fun.utils.Constants.ESP32_STA_MAC_ADDRESS_HEADER;
 import static org.fitznet.fun.utils.Constants.ESP32_VERSION_HEADER;
 import static org.fitznet.fun.utils.Constants.LATEST_VERSION_HEADER;
 
@@ -90,16 +91,31 @@ public class GamerBellController {
     }
 
     /**
-     * Checks for firmware updates and serves the latest firmware binary if available.
+     * REST entry point for OTA checks. The ESP32 {@code HTTPUpdate} library sends the MAC as
+     * {@code x-ESP32-STA-MAC}; the legacy {@code x-ESP32-MAC} is still accepted as a fallback.
      *
      * @param currentVersion the current firmware version from the ESP32 device header
-     * @param deviceMac      the MAC address of the ESP32 device
+     * @param staMac         station MAC sent by the HTTPUpdate library
+     * @param legacyMac      legacy MAC header, used only when {@code staMac} is absent
      * @return firmware binary if update available, 304 if up-to-date, or error status
      */
     @GetMapping("/api/firmware/latest")
-    public ResponseEntity<Resource> checkForUpdate(
+    public ResponseEntity<Resource> checkForUpdateRequest(
             @RequestHeader(value = ESP32_VERSION_HEADER, required = false) String currentVersion,
-            @RequestHeader(value = ESP32_MAC_ADDRESS_HEADER, required = false) String deviceMac) {
+            @RequestHeader(value = ESP32_STA_MAC_ADDRESS_HEADER, required = false) String staMac,
+            @RequestHeader(value = ESP32_MAC_ADDRESS_HEADER, required = false) String legacyMac) {
+        return checkForUpdate(currentVersion, staMac != null && !staMac.isBlank() ? staMac : legacyMac);
+    }
+
+    /**
+     * Checks for firmware updates and serves the latest firmware binary if available.
+     * Shared by the REST endpoint and the gRPC {@code GetLatestFirmware} RPC.
+     *
+     * @param currentVersion the current firmware version from the ESP32 device
+     * @param deviceMac      the MAC address of the ESP32 device
+     * @return firmware binary if update available, 304 if up-to-date, or error status
+     */
+    public ResponseEntity<Resource> checkForUpdate(String currentVersion, String deviceMac) {
 
         long startTime = System.currentTimeMillis();
         Timer.Sample firmwareCheckSample = Timer.start(meterRegistry);

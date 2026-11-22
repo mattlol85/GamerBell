@@ -10,7 +10,13 @@ public class Constants {
     /** Header containing the current firmware version of the ESP32 device. */
     public static final String ESP32_VERSION_HEADER = "x-ESP32-version";
 
-    /** Header containing the MAC address of the ESP32 device. */
+    /**
+     * Station MAC address, sent automatically by the Arduino-ESP32 {@code HTTPUpdate} library
+     * on every OTA request. This is what real bells send.
+     */
+    public static final String ESP32_STA_MAC_ADDRESS_HEADER = "x-ESP32-STA-MAC";
+
+    /** Legacy MAC header. No firmware sends it, but it is still accepted as a fallback. */
     public static final String ESP32_MAC_ADDRESS_HEADER = "x-ESP32-MAC";
 
     /** Header for firmware error messages. */

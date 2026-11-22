@@ -25,7 +25,7 @@ message GetCountResponse {
 message GetLatestFirmwareRequest {
   // x-ESP32-version header
   optional string current_version = 1;
-  // x-ESP32-MAC header
+  // x-ESP32-STA-MAC header (falls back to legacy x-ESP32-MAC)
   optional string device_mac = 2;
 }
 
